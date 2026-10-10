@@ -4,7 +4,9 @@ Light Phone III tools, running in a web browser. Not a video of an emulator: the
 Kotlin and Compose code compiled to WebAssembly, drawn in an LP3-sized screen by a small
 stand-in for LightOS.
 
-The first tool is [light-dnd](../light-dnd), compiled from its checkout **unchanged**.
+The first tool is [light-dnd](../light-dnd), compiled from its checkout **unchanged**, as is
+the LP3 keyboard ([lightphone/light-keyboard](https://github.com/lightphone/light-keyboard),
+checked out at `../light-keyboard`, tag `v0.0.19`).
 
 ## Running it
 
@@ -19,8 +21,13 @@ http.server` will do). It needs a browser with WasmGC: Chrome/Edge 119+, Firefox
 Safari 18.2+.
 
 In the page: click to tap, **Esc** is back, arrow keys and Page Up/Down reach a tool as
-D-pad and volume keys. Text fields take the computer's (or a phone's own) keyboard. Below the
-screen, `greyscale` toggles LightOS's monochrome filter.
+D-pad and volume keys. Below the screen:
+
+- **mode** switches between **LP3 emulator** (text through the real on-screen LP3 keyboard;
+  the computer's keys type on it too, as an external keyboard does on the phone) and
+  **computer** (no on-screen keyboard; text fields take the computer's keyboard directly).
+  Remembered per browser.
+- **greyscale** toggles LightOS's monochrome filter.
 
 ## How a tool gets to the browser
 
@@ -35,8 +42,10 @@ src/tools    per-tool registration and JVM-name shims ────────�
 ```
 
 - **Upstream code isn't edited.** `build.gradle.kts` syncs it into `build/generated/lightweb/upstream`
-  and compiles it there. The only rewrite is `LightIcons.allEntries`, which upstream builds with
-  JVM reflection; the sync lists the icons instead.
+  and compiles it there. Where a stand-in can't reach, `rewrites` makes a few exact text edits
+  to the copy, and the build fails if one stops matching. Today: the SDK's keyboard-backed
+  `LightTextInputEditor` is renamed `LightTextInputEditorLp3` (so the web one can choose by
+  mode), and `LightIcons.allEntries`, which upstream builds with JVM reflection, becomes a list.
 - **Android APIs a tool imports are provided under their Android names** (`src/compat`):
   `android.util.Log`, `android.view.KeyEvent`, `java.io.File`, `BitmapFactory`, `LocalContext`,
   `LocalConfiguration`, `painterResource(R.drawable.x)`, `Font(R.font.x)` and so on. Each does
@@ -47,10 +56,13 @@ src/tools    per-tool registration and JVM-name shims ────────�
   when it's opened, before its first screen.
 - **Files.** `java.io.File` is backed by localStorage, so a tool's save file survives a reload
   (per browser, per origin).
-- **SDK files replaced on the web** (excluded from the sync, rewritten in `src/sdk`):
-  `LightFont` (Akkurat can't be served publicly, so SDK text is the browser's sans),
-  `LightHapticFeedback` (`navigator.vibrate`), `LightTextInputEditor` (the LP3 keyboard library
-  is Android-only for now), `LightQrCodeScanner` (not supported).
+- **Files replaced on the web** (excluded from the sync, rewritten in `src/sdk`):
+  the SDK's `LightHapticFeedback` (`navigator.vibrate`) and `LightQrCodeScanner` (not
+  supported), the keyboard's `HardwareKeyboardInput` (browser key events instead of Android
+  input devices) and `Lp3KeyboardView` (an Android View; not needed).
+- **Akkurat.** LP3s have it as a system font; a public page can't serve it under its licence, so
+  SDK and keyboard text fall back to the default font. A licensed copy dropped into a pack's
+  `res/font` as `akkuratll_regular.ttf` etc. is picked up, as the SDK does on Android.
 - **The SDK client is reimplemented, not compiled** (`src/sdk/com/thelightphone/sdk`): the
   Android one is Activities and Binder IPC. `LightToolHost` takes LightActivity's place and keeps
   its back stack and lifecycle order.
@@ -66,8 +78,6 @@ src/tools    per-tool registration and JVM-name shims ────────�
 
 ## Not yet
 
-- **The LP3 keyboard.** [lightphone/light-keyboard](https://github.com/lightphone/light-keyboard)
-  is public Compose; compiling it for wasm would put the real keyboard on screen.
 - **Tools that need the network.** light-amp is next, and harder: browsers stop a page talking
   to most music servers (CORS, http on https), and its local stream proxy needs sockets.
 - **More of the SDK client:** `LightScreen` with view models, `dataStore`, `LightWork`, audio.

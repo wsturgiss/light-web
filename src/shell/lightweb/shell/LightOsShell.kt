@@ -46,6 +46,7 @@ import com.thelightphone.sdk.ui.lightClickable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import lightweb.Assets
+import lightweb.DeviceMode
 import lightweb.LightTool
 
 /** The LP3's screen: 1080 × 1240 px at density 3. */
@@ -70,7 +71,9 @@ fun LightOsShell() {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
+        // What LightOS itself provides to every tool: the SDK's icons and the LP3 keyboard's.
         Assets.load("sdk-ui")
+        Assets.load("keyboard")
         state = ShellState.Home
     }
     LaunchedEffect(greyscale) { setGreyscale(greyscale) }
@@ -152,7 +155,7 @@ private fun Screen(state: ShellState, onOpen: (LightTool) -> Unit) {
 /** Below the screen: what the phone's hardware and settings would do. */
 @Composable
 private fun Chrome(greyscale: Boolean, onGreyscale: () -> Unit, onBack: () -> Unit, canGoBack: Boolean) {
-    val style = TextStyle(color = Color(0xFF8A8A8A), fontSize = 13.sp)
+    val style = TextStyle(color = Color(0xFF8A8A8A), fontSize = 14.sp)
     Row(
         Modifier.fillMaxWidth().height(40.dp()).padding(horizontal = 16.dp()),
         horizontalArrangement = Arrangement.Center,
@@ -162,6 +165,14 @@ private fun Chrome(greyscale: Boolean, onGreyscale: () -> Unit, onBack: () -> Un
             if (canGoBack) "‹ back  (esc)" else "light-web",
             style = style,
             modifier = Modifier.lightClickable(enabled = canGoBack, hapticsEnabled = false, onClick = onBack),
+        )
+        BasicText("   ·   ", style = style)
+        BasicText(
+            "mode: ${DeviceMode.current.label}",
+            style = style,
+            modifier = Modifier.lightClickable(hapticsEnabled = false) {
+                DeviceMode.set(if (DeviceMode.current == DeviceMode.Lp3) DeviceMode.Computer else DeviceMode.Lp3)
+            },
         )
         BasicText("   ·   ", style = style)
         BasicText(

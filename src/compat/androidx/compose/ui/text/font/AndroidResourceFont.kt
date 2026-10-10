@@ -13,3 +13,10 @@ fun Font(
     weight = weight,
     style = style,
 )
+
+/** Android's `Font(file)`, for fonts found on the device. SystemFonts lists none here. */
+fun Font(
+    file: java.io.File,
+    weight: FontWeight = FontWeight.Normal,
+    style: FontStyle = FontStyle.Normal,
+): Font = error("No device font files on the web: ${file.path}")

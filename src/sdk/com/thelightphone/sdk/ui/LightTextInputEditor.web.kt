@@ -25,23 +25,19 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import com.thelightphone.lp3Keyboard.ui.KeyboardOptions
+import com.thelightphone.lp3Keyboard.ui.viewmodel.Lp3KeyboardViewModel
+import lightweb.DeviceMode
 import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.foundation.text.KeyboardOptions as ComposeKeyboardOptions
 
 private const val INPUT_UNDERLINE_THICKNESS_PX = 3f
 private const val INPUT_UNDERLINE_GAP_GRID_UNITS = 0.5f
 
-fun defaultKeyboardOptions() = KeyboardOptions(
-    displayReturn = true,
-    displayVoice = false,
-    enableKeyAnimation = true,
-    swipeEnabled = false,
-)
-
 /**
- * The SDK's full-screen text entry, laid out as upstream's (top bar, underlined heading-style
- * input, bottom bar) but typed into from the computer's keyboard, or a phone's own, instead
- * of the embedded LP3 keyboard. Return submits a single-line field.
+ * The SDK's full-screen text entry. In [DeviceMode.Lp3] it's upstream's, with the embedded LP3
+ * keyboard (compiled from the SDK as LightTextInputEditorLp3; see `rewrites` in
+ * build.gradle.kts). In [DeviceMode.Computer] it's the same layout with the keyboard left out,
+ * typed into from the computer's keyboard; Return submits a single-line field.
  */
 @Composable
 fun LightTextInputEditor(
@@ -59,6 +55,51 @@ fun LightTextInputEditor(
     singleLine: Boolean = false,
     initialCaps: Boolean = false,
     editorKey: Any = remember { Any() },
+) = when (DeviceMode.current) {
+    DeviceMode.Lp3 -> LightTextInputEditorLp3(
+        title, state, onSubmit, onBack, keyboardOptionsFlow, modifier, submitLabel, submitIcon,
+        leftBottomBarItem, rightBottomBarItem, showBackButton, singleLine, initialCaps, editorKey,
+    )
+    DeviceMode.Computer -> ComputerTextInputEditor(
+        title, state, onSubmit, onBack, modifier, submitLabel, submitIcon,
+        leftBottomBarItem, rightBottomBarItem, showBackButton, singleLine, initialCaps,
+    )
+}
+
+/** Upstream's other public overload, for tools that bring their own keyboard view model. */
+@Composable
+fun LightTextInputEditor(
+    title: String,
+    state: TextFieldState,
+    onSubmit: (CharSequence) -> Unit,
+    onBack: () -> Unit,
+    viewModel: Lp3KeyboardViewModel<*>,
+    modifier: Modifier = Modifier,
+    submitLabel: String = "SUBMIT",
+    submitIcon: LightIconConfiguration? = null,
+    leftBottomBarItem: LightBottomBarItem? = null,
+    rightBottomBarItem: LightBottomBarItem? = null,
+    showBackButton: Boolean = true,
+    singleLine: Boolean = false,
+) = LightTextInputEditorLp3(
+    title, state, onSubmit, onBack, viewModel, modifier, submitLabel, submitIcon,
+    leftBottomBarItem, rightBottomBarItem, showBackButton, singleLine,
+)
+
+@Composable
+private fun ComputerTextInputEditor(
+    title: String,
+    state: TextFieldState,
+    onSubmit: (CharSequence) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier,
+    submitLabel: String,
+    submitIcon: LightIconConfiguration?,
+    leftBottomBarItem: LightBottomBarItem?,
+    rightBottomBarItem: LightBottomBarItem?,
+    showBackButton: Boolean,
+    singleLine: Boolean,
+    initialCaps: Boolean,
 ) {
     val colors = LightThemeTokens.colors
     val focus = remember { FocusRequester() }
@@ -83,7 +124,7 @@ fun LightTextInputEditor(
                     BasicTextField(
                         state = state,
                         modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                        textStyle = lightInputTextStyle(),
+                        textStyle = computerInputTextStyle(),
                         cursorBrush = SolidColor(colors.content),
                         lineLimits = if (singleLine) TextFieldLineLimits.SingleLine else TextFieldLineLimits.Default,
                         keyboardOptions = ComposeKeyboardOptions(
@@ -118,7 +159,7 @@ fun LightTextInputEditor(
 }
 
 @Composable
-private fun lightInputTextStyle(): TextStyle {
+private fun computerInputTextStyle(): TextStyle {
     val colors = LightThemeTokens.colors
     return LightThemeTokens.typography.heading
         .copy(color = colors.content)

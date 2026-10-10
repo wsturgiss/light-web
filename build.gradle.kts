@@ -8,6 +8,7 @@ plugins {
 }
 
 val lightDnd = file(providers.gradleProperty("lightDnd.dir").get())
+val lightKeyboard = file(providers.gradleProperty("lightKeyboard.dir").get())
 val generated = layout.buildDirectory.dir("generated/lightweb")
 
 /**
@@ -18,7 +19,23 @@ data class Pack(val name: String, val rPackage: String, val res: File?, val asse
 
 val packs = listOf(
     Pack("sdk-ui", "com.thelightphone.sdk.ui", lightDnd.resolve("sdk/ui/src/main/res"), null),
+    Pack("keyboard", "com.thelightphone.lp3Keyboard.ui", lightKeyboard.resolve("ui/src/main/res"), null),
     Pack("dnd", "com.wsturgiss.dnd", lightDnd.resolve("tool/src/main/res"), lightDnd.resolve("tool/src/main/assets")),
+)
+
+/**
+ * Small, exact edits to upstream files, for the few things a stand-in can't reach. Each must
+ * still match, or the build fails: that's how we find out upstream moved.
+ */
+val rewrites = mapOf(
+    // The SDK's text editor with the embedded LP3 keyboard becomes LightTextInputEditorLp3; the
+    // public LightTextInputEditor (src/sdk) picks it or a plain text field by DeviceMode.
+    "ui/com/thelightphone/sdk/ui/LightTextInputEditor.kt" to listOf(
+        "LightTextInputEditor(" to "LightTextInputEditorLp3(",
+        // ViewModelProvider.Factory takes a KClass and CreationExtras off Android.
+        "override fun <T : ViewModel> create(modelClass: Class<T>): T {" to
+            "override fun <T : ViewModel> create(modelClass: kotlin.reflect.KClass<T>, extras: androidx.lifecycle.viewmodel.CreationExtras): T {",
+    ),
 )
 
 /**
@@ -30,18 +47,32 @@ val syncUpstreamSources by tasks.registering(Sync::class) {
     from(lightDnd.resolve("sdk/ui/src/main/kotlin")) {
         into("ui")
         exclude(
-            "**/LightFont.kt",            // Akkurat from the system font list
             "**/LightHapticFeedback.kt",  // Vibrator
             "**/LightQrCodeScanner.kt",   // CameraX + ML Kit
-            "**/LightTextInputEditor.kt", // the LP3 keyboard; see src/sdk
-            "**/keyboard/**",
+        )
+    }
+    from(lightKeyboard.resolve("ui/src/main/java")) {
+        into("keyboard")
+        exclude(
+            "**/Lp3KeyboardView.kt",       // an Android View, for IMEs
+            "**/HardwareKeyboardInput.kt", // reads Android InputDevices
         )
     }
     from(lightDnd.resolve("tool/src/main/kotlin")) { into("dnd") }
     into(generated.map { it.dir("upstream") })
 
-    // LightIcons.allEntries finds the icons by JVM reflection; list them instead.
     doLast {
+        for ((path, edits) in rewrites) {
+            val f = destinationDir.resolve(path)
+            var src = f.readText()
+            for ((from, to) in edits) {
+                check(from in src) { "$path no longer contains `$from`; update `rewrites`" }
+                src = src.replace(from, to)
+            }
+            f.writeText(src)
+        }
+
+        // LightIcons.allEntries finds the icons by JVM reflection; list them instead.
         val f = destinationDir.resolve("ui/com/thelightphone/sdk/ui/LightIcons.kt")
         val src = f.readText()
         val names = Regex("""object (\w+) : LightIconConfiguration""").findAll(src).map { it.groupValues[1] }.sorted()
@@ -82,6 +113,7 @@ abstract class GenerateResources : DefaultTask() {
         out.deleteRecursively()
         var nextId = 0x7f000001
         val idToPath = mutableListOf<Pair<Int, String>>()
+        val nameToId = mutableListOf<Pair<String, Int>>()
         val packFiles = mutableListOf<Pair<String, List<String>>>()
 
         for (i in packNames.get().indices) {
@@ -97,6 +129,7 @@ abstract class GenerateResources : DefaultTask() {
                     val id = nextId++
                     types.getOrPut(typeDir.name) { mutableListOf() } += f.nameWithoutExtension to id
                     idToPath += id to path
+                    nameToId += "${typeDir.name}/${f.nameWithoutExtension}" to id
                     files += path
                 }
             }
@@ -128,6 +161,11 @@ abstract class GenerateResources : DefaultTask() {
             appendLine("/** Android resource id → the path the page serves it at. */")
             appendLine("val resourcePaths: Map<Int, String> = mapOf(")
             for ((id, path) in idToPath) appendLine("    0x${id.toString(16)} to \"$path\",")
+            appendLine(")")
+            appendLine()
+            appendLine("/** `type/name` → id, for Resources.getIdentifier. Names can repeat across packs; the last wins. */")
+            appendLine("val resourceIds: Map<String, Int> = mapOf(")
+            for ((name, id) in nameToId) appendLine("    \"$name\" to 0x${id.toString(16)},")
             appendLine(")")
             appendLine()
             appendLine("/** Every file in each pack, so a pack can be loaded before anything reads from it. */")
@@ -180,6 +218,7 @@ kotlin {
                 implementation(compose.runtime)
                 implementation(compose.foundation)
                 implementation(compose.material3)
+                implementation(compose.material) // the LP3 keyboard is Material 2
                 implementation(compose.ui)
                 implementation(compose.components.resources)
                 implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")

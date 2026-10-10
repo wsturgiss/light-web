@@ -10,13 +10,14 @@ whole idea.
 JAVA_HOME=/home/will/.jdks/jbr-21.0.11 ./gradlew wasmJsBrowserDistribution
 ```
 
-System Java 26 is too new for Gradle 9.0. If `compileKotlinWasmJs` dies inside the compiler
-with `ArrayIndexOutOfBoundsException` in `WasmIrFileMetadata`, its incremental state is stale:
-`rm -rf build/kotlin build/classes` and build again.
+System Java 26 is too new for Gradle 9.0. Incremental wasm compilation is off
+(gradle.properties): with it on, Kotlin 2.3.20 crashes on rebuilds with
+`ArrayIndexOutOfBoundsException` in `WasmIrFileMetadata`. If that ever reappears,
+`rm -rf build/kotlin build/classes`.
 
 ## Rules
 
-- **Never edit the upstream checkouts** (`../light-dnd` and others) to make something build
+- **Never edit the upstream checkouts** (`../light-dnd`, `../light-keyboard` and others) to make something build
   here. Add a stand-in under `src/compat`, a per-tool shim under `src/tools`, or exclude the
   file in `syncUpstreamSources` and write a web version in `src/sdk`. Say why in the file.
 - `build/generated/lightweb/upstream` is a copy. Don't edit it; it's overwritten every build.
