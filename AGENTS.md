@@ -10,10 +10,10 @@ whole idea.
 JAVA_HOME=/home/will/.jdks/jbr-21.0.11 ./gradlew wasmJsBrowserDistribution
 ```
 
-System Java 26 is too new for Gradle 9.0. Incremental wasm compilation is off
-(gradle.properties): with it on, Kotlin 2.3.20 crashes on rebuilds with
-`ArrayIndexOutOfBoundsException` in `WasmIrFileMetadata`. If that ever reappears,
-`rm -rf build/kotlin build/classes`.
+System Java 26 is too new for Gradle 9.0. Kotlin 2.3.20's wasm compiler intermittently
+crashes reading its previous output (`ArrayIndexOutOfBoundsException` in
+`WasmIrFileMetadata`), so `compileKotlinWasmJs` deletes that output first and incremental
+compilation is off. If the crash ever shows up anyway, `rm -rf build/kotlin build/classes`.
 
 ## Rules
 

@@ -1,8 +1,10 @@
 package lightweb
 
+import androidx.room.RoomDatabase
 import com.thelightphone.sdk.LightEntryPoint
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
+import kotlin.reflect.KClass
 
 /**
  * A tool the shell can open. On Android the SDK's KSP processor finds the @InitialScreen and
@@ -16,4 +18,9 @@ class LightTool(
     val assetPack: String,
     val entryPoint: LightEntryPoint?,
     val initialScreen: (SealedLightActivity) -> SimpleLightScreen<*>,
+    /**
+     * Web implementations of the tool's Room databases, by database class; the factory gets the
+     * database name. Room has no wasm target, so these are written by hand (see buildDatabase).
+     */
+    val databases: Map<KClass<out RoomDatabase>, (name: String) -> RoomDatabase> = emptyMap(),
 )

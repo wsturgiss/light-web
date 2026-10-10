@@ -96,9 +96,14 @@ class LightToolHost(
         current.deliverResult()
     }
 
-    /** The system back gesture: the screen's own goBack, so a LightScreen's view model can veto it. */
+    /**
+     * The system back gesture. As in LightActivity's OnBackPressedCallback, this pops the
+     * current screen directly: a view model's onBackPressed only gets a say when the tool calls
+     * goBack() itself. So a screen showing a sub-view (a mode, not a pushed screen) is left
+     * entirely, as on the phone.
+     */
     fun back() {
-        currentScreen.value?.screen?.goBack(null)
+        goBack()
     }
 
     /** Leaving the tool for the shell, as onPause would. */

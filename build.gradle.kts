@@ -8,6 +8,7 @@ plugins {
 }
 
 val lightDnd = file(providers.gradleProperty("lightDnd.dir").get())
+val lightTraining = file(providers.gradleProperty("lightTraining.dir").get())
 val lightKeyboard = file(providers.gradleProperty("lightKeyboard.dir").get())
 val generated = layout.buildDirectory.dir("generated/lightweb")
 
@@ -21,6 +22,7 @@ val packs = listOf(
     Pack("sdk-ui", "com.thelightphone.sdk.ui", lightDnd.resolve("sdk/ui/src/main/res"), null),
     Pack("keyboard", "com.thelightphone.lp3Keyboard.ui", lightKeyboard.resolve("ui/src/main/res"), null),
     Pack("dnd", "com.wsturgiss.dnd", lightDnd.resolve("tool/src/main/res"), lightDnd.resolve("tool/src/main/assets")),
+    Pack("training", "com.thelightphone.training", null, lightTraining.resolve("tool/src/main/assets")),
 )
 
 /**
@@ -59,6 +61,7 @@ val syncUpstreamSources by tasks.registering(Sync::class) {
         )
     }
     from(lightDnd.resolve("tool/src/main/kotlin")) { into("dnd") }
+    from(lightTraining.resolve("tool/src/main/kotlin")) { into("training") }
     into(generated.map { it.dir("upstream") })
 
     doLast {
@@ -233,5 +236,15 @@ kotlin {
         // Upstream code is written for Android and trips warnings that don't matter here.
         suppressWarnings.set(true)
         freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+}
+
+// Kotlin 2.3.20's wasm compiler intermittently crashes reading its own previous output
+// (ArrayIndexOutOfBoundsException in WasmIrFileMetadata.fromByteArray) -- with incremental
+// compilation off too. Starting each compile from nothing avoids it; it costs nothing extra,
+// since without incremental compilation every compile is a full one anyway.
+tasks.named("compileKotlinWasmJs") {
+    doFirst {
+        delete(layout.buildDirectory.dir("classes/kotlin/wasmJs/main"), layout.buildDirectory.dir("kotlin/compileKotlinWasmJs"))
     }
 }

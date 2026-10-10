@@ -23,7 +23,9 @@ object JvmMath {
     fun min(a: Int, b: Int): Int = kotlin.math.min(a, b)
     fun max(a: Double, b: Double): Double = kotlin.math.max(a, b)
     fun min(a: Double, b: Double): Double = kotlin.math.min(a, b)
-    fun round(x: Double): Long = kotlin.math.round(x).toLong()
+    /** Java rounds half up (Math.round(-2.5) == -2), unlike kotlin.math.round's half-even. */
+    fun round(x: Double): Long = kotlin.math.floor(x + 0.5).toLong()
+    fun round(x: Float): Int = kotlin.math.floor(x + 0.5f).toInt()
     fun sqrt(x: Double): Double = kotlin.math.sqrt(x)
     fun pow(a: Double, b: Double): Double = a.pow(b)
 }
@@ -40,11 +42,11 @@ object JvmSystem {
 private fun performanceNow(): Double = js("performance.now()")
 
 /**
- * `String.format` for the specifiers Android tools actually use: `%s`, `%d`, `%.Nf`, `%%`,
+ * `String.format` for the specifiers Android tools actually use: `%s`, `%d`, `%x`, `%.Nf`, `%%`,
  * with an optional width. Not a full java.util.Formatter.
  */
 fun formatJvm(format: String, vararg args: Any?): String {
-    val spec = Regex("""%(-)?(0)?(\d+)?(?:\.(\d+))?([sdf%])""")
+    val spec = Regex("""%(-)?(0)?(\d+)?(?:\.(\d+))?([sdfxX%])""")
     var next = 0
     return spec.replace(format) { m ->
         val (left, zero, width, precision, conv) = m.destructured
@@ -52,6 +54,8 @@ fun formatJvm(format: String, vararg args: Any?): String {
         val arg = args.getOrNull(next++)
         val body = when (conv) {
             "d" -> (arg as Number).toLong().toString()
+            "x" -> (arg as Number).toLong().let { if (arg is Byte || arg is Int) it.toInt().toUInt().toString(16) else it.toULong().toString(16) }
+            "X" -> (arg as Number).toLong().let { if (arg is Byte || arg is Int) it.toInt().toUInt().toString(16) else it.toULong().toString(16) }.uppercase()
             "f" -> fixed((arg as Number).toDouble(), precision.ifEmpty { "6" }.toInt())
             else -> arg.toString()
         }

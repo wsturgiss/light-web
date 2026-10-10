@@ -3,7 +3,6 @@ package lightweb.shell
 import android.content.res.Configuration
 import android.view.KeyEvent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,14 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -43,11 +36,14 @@ import com.thelightphone.sdk.LightToolHost
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.lightClickable
+import kotlinx.browser.window
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import lightweb.Assets
 import lightweb.DeviceMode
 import lightweb.LightTool
+import org.w3c.dom.events.Event
+import org.w3c.dom.events.KeyboardEvent
 
 /** The LP3's screen: 1080 × 1240 px at density 3. */
 private const val SCREEN_W_DP = 360
@@ -94,25 +90,34 @@ fun LightOsShell() {
         }
     }
 
-    val keys = remember { FocusRequester() }
-    LaunchedEffect(Unit) { keys.requestFocus() }
+    // Listened for on the page, not through Compose focus: when the focused element leaves
+    // the screen (a number wheel, a text field), Compose has nothing focused and its key
+    // handlers hear nothing, but the phone's keys should always work.
+    DisposableEffect(Unit) {
+        val listener: (Event) -> Unit = listener@{ event ->
+            val e = event as KeyboardEvent
+            if (e.repeat && e.key == "Escape") return@listener
+            val down = e.type == "keydown"
+            if (e.key == "Escape") {
+                if (down) back()
+                return@listener
+            }
+            val running = state as? ShellState.Running ?: return@listener
+            val code = toolKeyCode(e.key) ?: return@listener
+            running.host.dispatchKey(KeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, code, if (e.repeat) 1 else 0))
+        }
+        window.addEventListener("keydown", listener)
+        window.addEventListener("keyup", listener)
+        onDispose {
+            window.removeEventListener("keydown", listener)
+            window.removeEventListener("keyup", listener)
+        }
+    }
 
     Column(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF111111))
-            .focusRequester(keys)
-            .focusable()
-            .onPreviewKeyEvent { e ->
-                if (e.key == Key.Escape && e.type == KeyEventType.KeyDown) {
-                    back()
-                    return@onPreviewKeyEvent true
-                }
-                val running = state as? ShellState.Running ?: return@onPreviewKeyEvent false
-                val code = toolKeyCode(e.key) ?: return@onPreviewKeyEvent false
-                val action = if (e.type == KeyEventType.KeyDown) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
-                running.host.dispatchKey(KeyEvent(action, code))
-            },
+            .background(Color(0xFF111111)),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -185,14 +190,14 @@ private fun Chrome(greyscale: Boolean, onGreyscale: () -> Unit, onBack: () -> Un
 
 private fun Int.dp() = androidx.compose.ui.unit.Dp(this.toFloat())
 
-/** Keys a tool can handle (LightKeyHandler), from the computer's keyboard. */
-private fun toolKeyCode(key: Key): Int? = when (key) {
-    Key.DirectionUp -> KeyEvent.KEYCODE_DPAD_UP
-    Key.DirectionDown -> KeyEvent.KEYCODE_DPAD_DOWN
-    Key.DirectionLeft -> KeyEvent.KEYCODE_DPAD_LEFT
-    Key.DirectionRight -> KeyEvent.KEYCODE_DPAD_RIGHT
-    Key.PageUp -> KeyEvent.KEYCODE_VOLUME_UP
-    Key.PageDown -> KeyEvent.KEYCODE_VOLUME_DOWN
+/** Keys a tool can handle (LightKeyHandler), from the computer's keyboard (DOM `KeyboardEvent.key`). */
+private fun toolKeyCode(key: String): Int? = when (key) {
+    "ArrowUp" -> KeyEvent.KEYCODE_DPAD_UP
+    "ArrowDown" -> KeyEvent.KEYCODE_DPAD_DOWN
+    "ArrowLeft" -> KeyEvent.KEYCODE_DPAD_LEFT
+    "ArrowRight" -> KeyEvent.KEYCODE_DPAD_RIGHT
+    "PageUp" -> KeyEvent.KEYCODE_VOLUME_UP
+    "PageDown" -> KeyEvent.KEYCODE_VOLUME_DOWN
     else -> null
 }
 

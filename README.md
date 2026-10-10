@@ -4,7 +4,8 @@ Light Phone III tools, running in a web browser. Not a video of an emulator: the
 Kotlin and Compose code compiled to WebAssembly, drawn in an LP3-sized screen by a small
 stand-in for LightOS.
 
-The first tool is [light-dnd](../light-dnd), compiled from its checkout **unchanged**, as is
+Two tools so far, each compiled from its checkout **unchanged**: [light-dnd](../light-dnd)
+and [light-training](../light-training). So is
 the LP3 keyboard ([lightphone/light-keyboard](https://github.com/lightphone/light-keyboard),
 checked out at `../light-keyboard`, tag `v0.0.19`).
 
@@ -20,7 +21,8 @@ The production build is a plain folder of static files: serve it from anywhere (
 http.server` will do). It needs a browser with WasmGC: Chrome/Edge 119+, Firefox 120+,
 Safari 18.2+.
 
-In the page: click to tap, **Esc** is back, arrow keys and Page Up/Down reach a tool as
+In the page: click to tap, the mouse wheel turns number wheels, **Esc** is the system back
+(it leaves the current screen, as on the phone), arrow keys and Page Up/Down reach a tool as
 D-pad and volume keys. Below the screen:
 
 - **mode** switches between **LP3 emulator** (text through the real on-screen LP3 keyboard;
@@ -54,8 +56,13 @@ src/tools    per-tool registration and JVM-name shims ────────�
   class with Android's shape is generated per pack, so `R.font.mek_sans` compiles unchanged.
   Android reads assets synchronously and tools rely on it, so a tool's whole pack is fetched
   when it's opened, before its first screen.
-- **Files.** `java.io.File` is backed by localStorage, so a tool's save file survives a reload
-  (per browser, per origin).
+- **Storage.** `java.io.File` and the SDK's `dataStore` are backed by localStorage, so a tool's
+  data survives a reload (per browser, per origin).
+- **Room databases are the one thing written per tool.** Room has no wasm build, so a tool's
+  database is a hand-written implementation of its own DAO interfaces over JSON tables
+  (`src/tools/training/WebTrainingDatabase.kt`), registered in its `LightTool.databases`. It has
+  to track the tool's schema by hand. Room 3 (alpha) does have a wasm build over SQLite; if more
+  tools need a database, that's the way to stop writing these.
 - **Files replaced on the web** (excluded from the sync, rewritten in `src/sdk`):
   the SDK's `LightHapticFeedback` (`navigator.vibrate`) and `LightQrCodeScanner` (not
   supported), the keyboard's `HardwareKeyboardInput` (browser key events instead of Android
@@ -69,22 +76,27 @@ src/tools    per-tool registration and JVM-name shims ────────�
 
 ## Adding a tool
 
-1. Add its pack to `packs` in `build.gradle.kts`, and its sources to `syncUpstreamSources`.
+1. Add its checkout to `gradle.properties`, its pack to `packs` in `build.gradle.kts`, and its
+   sources to `syncUpstreamSources`. Every tool builds against one copy of the SDK (light-dnd's
+   today), so its vendored SDK must match.
 2. Register it in `src/tools/<tool>/` (a `LightTool` naming its initial screen and entry point,
    which on Android KSP finds), and list it in `src/shell/lightweb/shell/Tools.kt`.
-3. Build. Compile errors are the list of what it uses that isn't here yet: add a stand-in to
-   `src/compat` if it's an Android API, or to `src/tools/<tool>/JvmBuiltins*.kt` if it's a JVM
-   name used without an import (`Math`, `String.format`).
+3. Copy a `JvmBuiltins*.kt` from `src/tools/training` into each of its packages: JVM names used
+   without an import (`Math`, `"%d".format`, `Foo::class.java`, `Dispatchers.IO`).
+4. If it uses Room, write its database (see `WebTrainingDatabase.kt`).
+5. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
+   `src/compat` under the real Android/Java names.
 
 ## Not yet
 
 - **Tools that need the network.** light-amp is next, and harder: browsers stop a page talking
   to most music servers (CORS, http on https), and its local stream proxy needs sockets.
-- **More of the SDK client:** `LightScreen` with view models, `dataStore`, `LightWork`, audio.
-  None is used by light-dnd.
+- **More of the SDK client:** `LightWork`, audio, push, NFC, file sharing. Neither tool uses them.
+- **Crash isolation.** An exception in a tool takes down the whole page; the shell should catch
+  it and return to the home screen.
 - **The SDK pinned per tool.** Today every tool builds against light-dnd's vendored SDK.
 
 ## Size
 
 Production, gzipped: about 1.3 MB of app wasm and 3.3 MB of Skia (Compose's renderer), plus
-each tool's assets when it's opened (light-dnd: 6.4 MB, mostly dice art).
+each tool's assets when it's opened (light-dnd: 6.4 MB, mostly dice art; light-training: none).

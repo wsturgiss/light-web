@@ -3,7 +3,10 @@ package com.thelightphone.sdk
 import androidx.compose.runtime.Composable
 import com.thelightphone.sdk.ui.LightKeyHandler
 import java.io.File
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import lightweb.Assets
+import lightweb.WebPreferencesDataStore
 
 /**
  * The SDK's screen, with the same public API as on Android. Navigation goes to the
@@ -57,13 +60,17 @@ abstract class SimpleLightScreen<ResultType>(sealedActivity: SealedLightActivity
 }
 
 /**
- * What a tool gets instead of an Android Context. [filesDir] is kept in localStorage (see
- * java.io.File); assets come from the tool's pack, loaded before its first screen.
+ * What a tool gets instead of an Android Context. [filesDir] and [dataStore] are kept in
+ * localStorage; assets come from the tool's pack, loaded before its first screen.
  */
-class SealedLightContext internal constructor(private val host: LightToolHost) {
+class SealedLightContext internal constructor(internal val host: LightToolHost) {
     val filesDir: File by lazy { File("/data/${host.tool.id}/files") }
+    val dataStore: DataStore<Preferences> by lazy { dataStores.getOrPut(host.tool.id) { WebPreferencesDataStore(host.tool.id) } }
     fun readAsset(path: String): ByteArray = Assets.readAsset(host.tool.assetPack, path)
 }
+
+// One per tool for the life of the page, as Android's preferencesDataStore delegate gives one per app.
+private val dataStores = HashMap<String, DataStore<Preferences>>()
 
 /** Wraps the host so user code can pass it around without reaching into it, as on Android. */
 class SealedLightActivity(internal val activity: LightToolHost)
