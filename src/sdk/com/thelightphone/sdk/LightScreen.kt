@@ -1,0 +1,69 @@
+package com.thelightphone.sdk
+
+import androidx.compose.runtime.Composable
+import com.thelightphone.sdk.ui.LightKeyHandler
+import java.io.File
+import lightweb.Assets
+
+/**
+ * The SDK's screen, with the same public API as on Android. Navigation goes to the
+ * [LightToolHost] that stands where `LightActivity` does on the phone.
+ */
+// Unlike the Android SDK, this shares a Kotlin module with the tools, so its `internal` members
+// are visible to them and can collide with theirs; hence the lw prefix.
+abstract class SimpleLightScreen<ResultType>(sealedActivity: SealedLightActivity) :
+    LightKeyHandler {
+    internal val lwHost = sealedActivity.activity
+    internal var lwResult: ResultType? = null
+    protected val lightContext = SealedLightContext(sealedActivity.activity)
+
+    @Composable
+    abstract fun Content()
+    open fun willShow() {}
+    open fun willHide() {}
+    open fun onAppPause() {}
+    open fun onScreenDestroy() {}
+
+    internal open fun notifyWillShow() {
+        willShow()
+    }
+
+    internal open fun notifyWillHide() {
+        willHide()
+    }
+
+    internal open fun notifyAppPause() {
+        onAppPause()
+    }
+
+    internal open fun destroy() {
+        onScreenDestroy()
+    }
+
+    fun <T> navigateTo(screenFactory: (SealedLightActivity) -> SimpleLightScreen<T>, resultCallback: ((T) -> Unit)? = null) {
+        val screen = screenFactory(SealedLightActivity(lwHost))
+        lwHost.navigateTo(screen, resultCallback)
+    }
+
+    open fun goBack(result: ResultType? = null) {
+        this.lwResult = result
+        lwHost.goBack()
+    }
+
+    /** Pops every screen above the initial one (the fork's SDK patch; harmless where unused). */
+    fun popToRoot() {
+        lwHost.popToRoot()
+    }
+}
+
+/**
+ * What a tool gets instead of an Android Context. [filesDir] is kept in localStorage (see
+ * java.io.File); assets come from the tool's pack, loaded before its first screen.
+ */
+class SealedLightContext internal constructor(private val host: LightToolHost) {
+    val filesDir: File by lazy { File("/data/${host.tool.id}/files") }
+    fun readAsset(path: String): ByteArray = Assets.readAsset(host.tool.assetPack, path)
+}
+
+/** Wraps the host so user code can pass it around without reaching into it, as on Android. */
+class SealedLightActivity(internal val activity: LightToolHost)
