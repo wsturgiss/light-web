@@ -60,8 +60,7 @@ Room needs, and KSP writes the `actual` into `wasmJsMain`.
   and compiles it there. Where a stand-in can't reach, `rewrites` makes a few exact text edits
   to the copy, and the build fails if one stops matching. Today: the SDK's keyboard-backed
   `LightTextInputEditor` is renamed `LightTextInputEditorLp3` (so the web one can choose by
-  mode), `LightIcons.allEntries`, which upstream builds with JVM reflection, becomes a list, and
-  light-training's `ensureSeeded` gets a lock (a race; see the handoff's "Found in tools").
+  mode), and `LightIcons.allEntries`, which upstream builds with JVM reflection, becomes a list.
 - **Android APIs a tool imports are provided under their Android names** (`src/compat`):
   `android.util.Log`, `android.view.KeyEvent`, `java.io.File`, `BitmapFactory`, `LocalContext`,
   `LocalConfiguration`, `painterResource(R.drawable.x)`, `Font(R.font.x)` and so on. Each does
@@ -94,7 +93,7 @@ Room needs, and KSP writes the `actual` into `wasmJsMain`.
   `WebWorkerSQLiteDriver` protocol) on files in the origin-private file system, so it works from
   static hosting with no special headers. SQLite (about 580 KB gzipped) is fetched when a tool
   first opens a database. Only `suspend` and `Flow` DAO functions work: the browser has no
-  blocking SQLite. One tab per origin can hold the databases at a time. Rows saved by earlier
+  blocking SQLite. One browser tab per origin can hold the databases at a time (all light-web needs). Rows saved by earlier
   light-web versions (JSON in localStorage) are imported on first open.
 - **Files replaced on the web** (excluded from the sync, rewritten in `src/sdk`):
   the SDK's `LightHapticFeedback` (`navigator.vibrate`) and `LightQrCodeScanner` (not

@@ -263,11 +263,11 @@ generated code, minus the hand-written database), paid on page load. SQLite +579
 
 ### Limits and risks
 
-- **One tab per origin.** The sahpool VFS holds its files exclusively, so a second tab can't
-  open any database: the tool stops there, with "Can't open light-web's databases; is light-web
-  open in another tab?" in the log. The first tab and its data are fine. Ways out if it matters:
-  wait on a Web Lock until the other tab closes, or release the files while a tab is hidden
-  (sahpool's `pauseVfs`).
+- **One browser tab per origin.** The sahpool VFS holds its files exclusively, so a second tab
+  can't open any database: the tool stops there, with "Can't open light-web's databases; is
+  light-web open in another tab?" in the log. The first tab and its data are fine. Will
+  (2026-10-11): multiple tabs needn't be supported. (If that changes: wait on a Web Lock, or
+  release the files while a tab is hidden with sahpool's `pauseVfs`.)
 - **DAO functions must be `suspend` or `Flow`.** The browser has no blocking SQLite, and Room
   refuses blocking DAOs off Android. light-training's 36 and light-amp's 59 all qualify; the
   authenticator example's all block, so it won't build without changing.
@@ -276,7 +276,7 @@ generated code, minus the hand-written database), paid on page load. SQLite +579
   incompatibility gets translated, and the build fails loudly when it meets one it doesn't know.
 - **Races the JSON tables hid.** Their DAOs never really suspended, so concurrent callers took
   turns; under Room they interleave, as on the phone. One has shown up so far (light-training's
-  seeding, below).
+  seeding, below; fixed there).
 
 ## Layout
 
@@ -332,7 +332,7 @@ plus each tool's assets, plus 0.58 MB of SQLite when a tool opens a database.
   shadowed a package's own class.
 - A crash reloads the whole page, so a tool's in-memory state (and any other open tool's) goes
   with it, as a process death would on Android. Saved data survives.
-- Only one tab per origin can use the databases (see "Room 3").
+- Only one browser tab per origin can use the databases (see "Room 3"); by design.
 - Adding an npm dependency changes `kotlin-js-store/wasm/yarn.lock`; the build then stops until
   `./gradlew kotlinWasmUpgradeYarnLock` is run and the lock committed.
 - Production stacks have no function names. For a readable one, build
@@ -364,15 +364,14 @@ stand-in").
 
 ## Found in tools (not light-web's to fix)
 
-- **light-training: `ensureSeeded()` races itself.** Screens call it concurrently (HomeScreen's
-  `reloadSessions()` runs from both `init` and `onScreenShow`); each counts rows, sees none, and
-  inserts the defaults, whose ids are fixed (`tabata`, ...), so the second insert fails with a
-  UNIQUE constraint and the tool stops. Only `syncExports` is locked. The hand-written database
-  hid it; under Room 3 it crashed on the first open after an import (presets empty, the rest
-  not). The phone's Room suspends the same way, so it's latent there on a fresh install. light-web
-  serialises it with an exact rewrite (a `Mutex` around the body, `rewrites` in
-  `build.gradle.kts`); the fix belongs in light-training, after which the rewrite stops matching
-  and is removed.
+- **light-training: `ensureSeeded()` raced itself; fixed in light-training** (`8105fd0` on its
+  `fix/seed-race` branch, not yet merged). Screens call it concurrently (HomeScreen's
+  `reloadSessions()` runs from both `init` and `onScreenShow`); each counted rows, saw none, and
+  inserted the defaults, whose ids are fixed (`tabata`, ...), so the second insert failed a UNIQUE
+  constraint and the tool stopped. The hand-written database hid it; under Room 3 it crashed on
+  the first open after an import (presets empty, the rest not). Latent on the phone too. **light-web
+  builds from `../light-training`'s working tree, so until the fix is on light-training's `main`,
+  that checkout must be on `fix/seed-race`**, or Training crashes in the browser again.
 
 - **light-training: system back leaves a whole screen from its inner modes.** "Manage
   exercises", "Add set", the delete confirmations, and Settings' Muscle Groups/Exercises
@@ -388,10 +387,9 @@ stand-in").
 
 ## Open questions for Will
 
-- **Room 3:** done (2026-10-11). Is one tab per origin acceptable, or should a second tab wait
-  for the first (a Web Lock)?
-- **light-training's seeding race** (below): fix it in light-training, so light-web can drop its
-  rewrite?
+- **Room 3:** done (2026-10-11); one tab per origin is enough.
+- **light-training `fix/seed-race`:** push and merge it? Until it's on `main`, light-web needs that
+  checkout on the branch (see "Found in tools").
 - **Network for a hosted build:** a proxy (a small worker, which costs a service and abuse
   limits), or tools limited to sites that allow cross-origin requests?
 - **Catalog scan:** may light-web clone and build the public tools in `TOOL-CATALOG.md`? Building

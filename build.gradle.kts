@@ -62,15 +62,6 @@ val rewrites = mapOf(
     "reader/com/yarosz/reader/Epub.kt" to listOf(
         "spine += attrs.getValue(\"idref\") to" to "spine += attrs.getValue(\"idref\")!! to",
     ),
-    // A race in light-training, which the hand-written database hid (its DAOs never really
-    // suspended): screens call ensureSeeded() concurrently, both count zero rows, and both insert
-    // the same fixed ids. Under Room every query suspends, so the second insert fails (UNIQUE
-    // constraint, interval_presets.id) and the tool stops. The phone's Room is asynchronous too.
-    // Serialised here until light-training locks it itself (see docs/HANDOFF.md, "Found in tools").
-    "training/com/thelightphone/training/model/TrainingRepository.kt" to listOf(
-        "    suspend fun ensureSeeded() {\n" to "    suspend fun ensureSeeded() = seedLock.withLock {\n",
-        "    private val exportsSyncLock = Mutex()\n" to "    private val exportsSyncLock = Mutex()\n\n    private val seedLock = Mutex() // light-web\n",
-    ),
     // The SDK's text editor with the embedded LP3 keyboard becomes LightTextInputEditorLp3; the
     // public LightTextInputEditor (src/sdk) picks it or a plain text field by DeviceMode.
     "ui/com/thelightphone/sdk/ui/LightTextInputEditor.kt" to listOf(
