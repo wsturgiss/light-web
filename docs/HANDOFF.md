@@ -118,7 +118,12 @@ backup questions from the export files, and nothing restores from them yet.)
 
 - **Compile tools unchanged; never edit upstream** (see Approach). Everything web-specific lives
   in light-web.
-- **Every tool builds against the latest light-sdk release only** (Will, 2026-10-11). Today
+- **Every tool builds against the latest light-sdk release** (Will, 2026-10-11), **and since the
+  same day a tool on an older SDK that release contains is taken too**, compiled against the
+  latest (Will chose it to take light-amp, pinned between v0.1.1 and v0.2.0, without changing
+  it). Rejected still: an SDK the latest release doesn't contain (newer, forked, edited vendored
+  files). The original rule follows.
+- (Original rule:) **Every tool builds against the latest light-sdk release only** (Will, 2026-10-11). Today
   that's tag v0.2.0 (2026-10-08), the copy light-dnd vendors; light-training's and light-reader's
   are identical. Follow release tags, not main (main is ahead of v0.2.0). A tool on an older SDK
   is compiled against the latest anyway, and where that breaks it, the break is recorded as an

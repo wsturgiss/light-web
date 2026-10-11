@@ -2,20 +2,25 @@
 //
 //   node tool/sdk-version.mjs [--sdk ../light-sdk] [--require-latest] [--check-sdk-checkout] <tool module dir>...
 //
-// light-web builds every tool against the latest light-sdk release only (docs/HANDOFF.md), so a
-// tool on anything else is rejected before compiling, with the reason, rather than failing deep
-// in the compile. "Latest release" is the highest vX.Y.Z tag in the light-sdk checkout (fetch its
-// tags to see a new one). lighttool.toml doesn't record the version, so it's read from how the
-// tool pins the SDK:
+// light-web builds every tool against the latest light-sdk release (docs/HANDOFF.md). It takes a
+// tool whose SDK that release contains: the release itself, an older one, or a commit between
+// releases (light-amp pins one), compiled against the latest all the same. A tool on an SDK the
+// latest release doesn't contain (a newer commit, a fork, local changes) is rejected before
+// compiling, with the reason, rather than failing deep in the compile. "Latest release" is the
+// highest vX.Y.Z tag in the light-sdk checkout (fetch its tags to see a new one).
+// lighttool.toml doesn't record the version, so it's read from how the tool pins the SDK:
 //
-// - A light-sdk git submodule: the tag at its commit (`git describe --tags --exact-match`; not
-//   `git submodule status`, which can name an older tag for the same commit).
+// - A light-sdk git submodule: its commit, which the light-sdk checkout must have as an ancestor
+//   of the latest release, named by the tag at it if there is one (`git describe --tags
+//   --exact-match`; not `git submodule status`, which can name an older tag for the same commit).
+//   Changes in its working tree are ignored: they're the tool's own patches to the SDK's client,
+//   which light-web replaces anyway.
 // - A vendored `sdk/` folder: the release whose files it matches, by content (git blob hashes,
 //   committed tree), ignoring Markdown. Uncommitted changes there make it unknown.
 // - A Maven dependency on light-sdk's packages: the version in the Gradle files.
 //
 // Anything it can't place is a rejection too. Prints one line per tool; with --require-latest,
-// exits 1 if any is rejected. --check-sdk-checkout also requires the light-sdk checkout itself
+// exits 1 if any is rejected (the name predates older SDKs being taken). --check-sdk-checkout also requires the light-sdk checkout itself
 // to be at the latest release, since that's what light-web compiles tools against.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -65,10 +70,16 @@ function sdkOf(toolDir) {
       .find(([, , url]) => /lightphone\/light-sdk(\.git)?$/.test(url));
     if (sub) {
       const dir = join(root, sub[1]);
+      const commit = tryGit(dir, "rev-parse", "HEAD");
+      if (!commit) return { reason: `submodule ${sub[1]} isn't checked out` };
       const tag = tryGit(dir, "describe", "--tags", "--exact-match");
-      if (tag) return { version: tag, how: `submodule ${sub[1]}` };
-      const commit = tryGit(dir, "rev-parse", "--short", "HEAD");
-      return { reason: commit ? `submodule ${sub[1]} is at ${commit}, which isn't a release tag` : `submodule ${sub[1]} isn't checked out` };
+      if (tag && semver(tag)) return { version: tag, how: `submodule ${sub[1]}` };
+      const name = tryGit(dir, "describe", "--tags") ?? commit.slice(0, 7);
+      // --is-ancestor prints nothing and exits 0 when it is; tryGit gives null for a non-zero exit.
+      if (tryGit(sdkDir, "merge-base", "--is-ancestor", commit, latest) === null) {
+        return { reason: `submodule ${sub[1]} is at ${name}, which ${latest} doesn't contain (or the light-sdk checkout lacks it; fetch it)` };
+      }
+      return { version: name, contained: true, how: `submodule ${sub[1]}` };
     }
   }
 
@@ -101,15 +112,20 @@ if (checkCheckout) {
     console.log(`light-sdk checkout (${sdkDir}): at ${at ?? tryGit(sdkDir, "rev-parse", "--short", "HEAD")}, not ${latest} (latest release); run git -C ${sdkDir} checkout ${latest}`);
   }
 }
+/** Whether release tag [a] is no later than [b]. */
+const notAfter = (a, b) => { const x = semver(a), y = semver(b); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; };
+
 for (const dir of tools) {
   const name = tryGit(dir, "rev-parse", "--show-toplevel")?.split("/").at(-1) ?? dir;
   const r = sdkOf(dir);
   if (r.version === latest) {
     console.log(`${name}: SDK ${r.version} (${r.how}), the latest release`);
+  } else if (r.contained || (r.version && semver(r.version) && notAfter(r.version, latest) < 0)) {
+    console.log(`${name}: SDK ${r.version} (${r.how}), older than ${latest}, which contains it; compiled against ${latest}`);
   } else {
     rejected++;
-    const why = r.version ? `SDK ${r.version} (${r.how})` : r.reason;
-    console.log(`${name}: REJECTED: ${why}; light-web requires ${latest} (latest release)`);
+    const why = r.version ? `SDK ${r.version} (${r.how}), newer than ${latest}` : r.reason;
+    console.log(`${name}: REJECTED: ${why}; light-web takes SDKs ${latest} contains`);
   }
 }
 if (requireLatest && rejected) process.exit(1);

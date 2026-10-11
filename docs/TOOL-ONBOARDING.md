@@ -116,13 +116,41 @@ light-web now it reports 0.
 - Synchronous network (the page freezes while a book downloads: ~0.5 s for 700 KB).
 - CORS: Standard Ebooks and Gutenberg's downloads refuse cross-origin requests, so the dev
   server proxies; how a hosted build reaches the network is still open.
-- SDK policy (Will): only tools on the latest light-sdk release.
+- SDK policy (Will): only tools on the latest light-sdk release. (Widened 2026-10-11: any SDK the
+  latest release contains, compiled against the latest.)
+
+## light-amp (light-amp-fork, in progress)
+
+- **Date:** 2026-10-11. **SDK:** v0.1.1-12-g15b1ca1, submodule, plus 11 patches of amp's own to
+  the SDK's client (`light-sdk-patch/`), applied in the submodule's working tree. Taken since the
+  SDK policy changed (Will, 2026-10-11): a tool whose SDK the latest release contains is compiled
+  against that release. The patches all touch `sdk/client`, which light-web reimplements, so
+  they become light-web's to provide (audio queue ops, `LightAudioNetworkPolicy`,
+  `hasRuntimePermission`, `LightDisplayColor`, `DlnaCast`, `LightTransferService`...).
+- **Size:** 97 Kotlin files, ~34,000 lines; on the branch `playlist-membership-cache`.
+- **Scan (before):** 107 names (see `API-COVERAGE.md`).
+- **First compile:** 1111 errors: 830 unresolved references (144 distinct names, plus 94 members
+  of values whose type is missing), 231 follow-on, 50 others. By area:
+  - SDK client: audio (12 names), cast (3), `LightWork`/`LightJob*`, `LightDisplayColor`,
+    `LightTransferService`, `LightQrCodeScanner`, permissions, `refreshKeyboardOptions`.
+  - Ktor (client, http, the OkHttp engine) and okhttp3 itself (`NetworkGate`, `StreamProxy`,
+    `DownloadStore`): Ktor has a wasm build; OkHttp doesn't.
+  - Sockets and TLS: `ServerSocket`, `Socket`, `DatagramSocket`, `InetAddress`,
+    `NetworkInterface`, `SSLContext`/`SSLEngine`/trust managers, `KeyStore`, `KeyPairGenerator`,
+    `X509Certificate` (`StreamProxy`, `LoopbackCert`, `PlexGdm`, `PlexCompanionListener`).
+  - media3 (`Player`, `PlaybackException`), `MediaMetadataRetriever`, `LruCache`, `StatFs`,
+    `NetworkSecurityPolicy`, `RandomAccessFile`, `BigInteger`, `Normalizer`, atomics,
+    `TimeUnit`, `WeakHashMap`, `runBlocking`, `BuildConfig`.
+- **Plan:** browse and play from Plex on the home network first (Will). What a browser can't do
+  (amp's loopback `StreamProxy`, Plex GDM discovery over UDP, the companion listener, DLNA cast,
+  background transfers) compiles against stand-ins that fail at runtime; amp already falls back
+  where they fail (`StreamProxy` tests itself and hands the player the server's own URL).
 
 ## Rejected
 
 | Tool | Date | Reason |
 |---|---|---|
-| light-amp, light-amp-fork | 2026-10-11 | `light-sdk` submodule at 15b1ca1, not a release tag; requires v0.2.0 |
+| ~~light-amp, light-amp-fork~~ | 2026-10-11 | `light-sdk` submodule at 15b1ca1, not a release tag. Taken the same day under the changed policy (above). |
 
 light-herdr also fails the check (vendored `sdk/` matches no release; closest v0.1.1), but it isn't
 finished, so it's left out rather than recorded as rejected (Will, 2026-10-11).
