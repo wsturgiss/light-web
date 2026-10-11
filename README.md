@@ -21,14 +21,15 @@ The production build is a plain folder of static files: serve it from anywhere (
 http.server` will do). It needs a browser with WasmGC: Chrome/Edge 119+, Firefox 120+,
 Safari 18.2+.
 
-In the page: click to tap, the mouse wheel turns number wheels, **Esc** is the system back
+In the page: click to tap, drag to scroll a list or spin a number wheel (in LP3 emulator
+mode; the mouse wheel does both in either mode), **Esc** is the system back
 (it leaves the current screen, as on the phone), arrow keys and Page Up/Down reach a tool as
 D-pad and volume keys. Below the screen:
 
 - **mode** switches between **LP3 emulator** (text through the real on-screen LP3 keyboard;
   the computer's keys type on it too, as an external keyboard does on the phone) and
-  **computer** (no on-screen keyboard; text fields take the computer's keyboard directly).
-  Remembered per browser.
+  **computer** (no on-screen keyboard; text fields take the computer's keyboard directly,
+  and the mouse is a mouse). Remembered per browser.
 - **greyscale** toggles LightOS's monochrome filter.
 
 ## How a tool gets to the browser

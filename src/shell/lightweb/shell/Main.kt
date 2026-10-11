@@ -7,6 +7,7 @@ import kotlinx.browser.document
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     CrashGuard.install()
+    MouseAsTouch.install()
     ComposeViewport(document.body!!) {
         LightOsShell()
     }

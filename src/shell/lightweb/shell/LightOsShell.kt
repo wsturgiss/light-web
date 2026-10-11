@@ -74,6 +74,7 @@ fun LightOsShell() {
         state = ShellState.Home
     }
     LaunchedEffect(greyscale) { setGreyscale(greyscale) }
+    LaunchedEffect(DeviceMode.current) { MouseAsTouch.enabled = DeviceMode.current == DeviceMode.Lp3 }
 
     fun open(tool: LightTool) {
         crash = null
