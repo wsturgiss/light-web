@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import lightweb.Assets
 import lightweb.DeviceMode
+import lightweb.compat.WebFiles
 import lightweb.LightTool
 import org.w3c.dom.events.Event
 import org.w3c.dom.events.KeyboardEvent
@@ -81,6 +82,8 @@ fun LightOsShell() {
         CrashGuard.toolOpening(tool.name)
         scope.launch {
             Assets.load(tool.assetPack) { done, total -> state = ShellState.Loading(tool, done, total) }
+            // What the tool saved before: Android reads its files synchronously, so they're read in now.
+            WebFiles.load("/data/${tool.id}")
             val host = LightToolHost(tool) {
                 CrashGuard.toolClosed()
                 state = ShellState.Home

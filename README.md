@@ -4,8 +4,8 @@ Light Phone III tools, running in a web browser. Not a video of an emulator: the
 Kotlin and Compose code compiled to WebAssembly, drawn in an LP3-sized screen by a small
 stand-in for LightOS.
 
-Two tools so far, each compiled from its checkout **unchanged**: [light-dnd](../light-dnd)
-and [light-training](../light-training). So is
+Three tools so far, each compiled from its checkout **unchanged**: [light-dnd](../light-dnd),
+[light-training](../light-training) and [light-reader](../light-reader). So is
 the LP3 keyboard ([lightphone/light-keyboard](https://github.com/lightphone/light-keyboard),
 checked out at `../light-keyboard`, tag `v0.0.19`).
 
@@ -15,10 +15,13 @@ checked out at `../light-keyboard`, tag `v0.0.19`).
 export JAVA_HOME=/home/will/.jdks/jbr-21.0.11
 ./gradlew wasmJsBrowserDevelopmentRun        # dev server with reload, http://localhost:8080
 ./gradlew wasmJsBrowserDistribution          # static site in build/dist/wasmJs/productionExecutable
+node tool/serve.mjs                          # serves it at http://127.0.0.1:8765, with the network proxy
 ```
 
-The production build is a plain folder of static files: serve it from anywhere (`python3 -m
-http.server` will do). It needs a browser with WasmGC: Chrome/Edge 119+, Firefox 120+,
+The production build is a plain folder of static files: serve it from anywhere. Served by
+`tool/serve.mjs`, tools reach any site through its proxy; served anywhere else, only sites that
+allow cross-origin requests. `serve.mjs` takes the folder and port to serve
+(`node tool/serve.mjs build/dist/wasmJs/developmentExecutable 8767` for readable stacks). It needs a browser with WasmGC: Chrome/Edge 119+, Firefox 120+,
 Safari 18.2+.
 
 In the page: click to tap, drag to scroll a list or spin a number wheel (in LP3 emulator
@@ -35,7 +38,7 @@ D-pad and volume keys. Below the screen:
 ## How a tool gets to the browser
 
 ```
-../light-dnd/tool/src/main/kotlin    ┐
+tools= in gradle.properties          ┐
 ../light-dnd/sdk/ui/src/main/kotlin  ├─ synced as-is (a few SDK UI files excluded) ─┐
 ../light-dnd/sdk/shared/...          ┘                                              │
 src/compat   stand-ins for the android.* / java.* / androidx Android-only APIs ─────┤
@@ -64,10 +67,18 @@ src/tools    per-tool web code: light-training's database, the crash test tool �
   class with Android's shape is generated per pack, so `R.font.mek_sans` compiles unchanged.
   Android reads assets synchronously and tools rely on it, so a tool's whole pack is fetched
   when it's opened, before its first screen.
-- **Storage.** `java.io.File` and the SDK's `dataStore` are backed by localStorage, so a tool's
-  data survives a reload (per browser, per origin). The `dataStore` is DataStore's own
-  `WebLocalStorage`, at `lightweb:prefs:<tool id>`; what light-web's earlier stand-in saved is
-  migrated on first open.
+- **Storage.** A tool's files (`java.io.File`) are bytes in IndexedDB, read into memory when the
+  tool opens and written back as they change (`WebFiles`): Android reads files synchronously, and
+  a book is bigger than localStorage's few MB. The SDK's `dataStore` is DataStore's own
+  `WebLocalStorage`, at `lightweb:prefs:<tool id>`. Both survive a reload (per browser, per
+  origin), and what earlier light-web versions saved is moved over on first open.
+- **Network.** `HttpURLConnection` is a synchronous XMLHttpRequest, since tools fetch with a
+  blocking call and a page has no thread to block: the page waits for the response (about half a
+  second for a 700 KB book). Served by `tool/serve.mjs`, requests go through its local `/proxy`,
+  so sites that don't allow cross-origin requests work, redirects and failures reach the tool as
+  on the phone, and the tool's User-Agent is sent. Served any other way, requests go straight to
+  the site and only work where the site allows it (Gutenberg's feeds do; its downloads and
+  Standard Ebooks don't).
 - **Room databases are the one thing written per tool.** Room has no wasm build, so a tool's
   database is a hand-written implementation of its own DAO interfaces over JSON tables
   (`src/tools/training/WebTrainingDatabase.kt`), marked `@WebDatabase(TrainingDatabase::class)`. It has
@@ -86,32 +97,37 @@ src/tools    per-tool web code: light-training's database, the crash test tool �
 
 ## Adding a tool
 
-1. Add its checkout to `gradle.properties` and its pack to `packs` in `build.gradle.kts`, with
-   `tool` set to the module holding its `lighttool.toml`. That's the registration: the build
-   syncs its sources and writes its `LightTool` (`generateToolRegistry`): id and label from
-   `lighttool.toml`, entry point and first screen from its `@EntryPoint` and `@InitialScreen`
-   classes, as KSP finds them on Android. Every tool builds against one copy of the SDK
-   (light-dnd's today), so its vendored SDK must match.
+1. Add the module holding its `lighttool.toml` to `tools=` in `gradle.properties`. That's the
+   registration: the build syncs its sources, serves its `res/` and `assets/`, generates its `R`
+   (in the package `tool.id` names, as the SDK's Gradle plugin does) and writes its `LightTool`
+   (`generateToolRegistry`): id and label from `lighttool.toml`, entry point and first screen
+   from its `@EntryPoint` and `@InitialScreen` classes, as KSP finds them on Android. Every tool
+   builds against one copy of the SDK (light-dnd's today), so its vendored SDK must match.
 2. If it uses Room, write its database in `src/tools/<pack>/`, marked `@WebDatabase(Foo::class)`
    (see `WebTrainingDatabase.kt`).
 3. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
    `src/compat` under the real Android/Java names.
+4. Java's platform types are the one thing a stand-in can't match: on the JVM `uri.host` is
+   `String!`, usable as nullable or non-null. Stand-ins keep Java's real nullability, so a tool
+   that uses one as non-null gets an exact `!!` rewrite in `rewrites` (see light-reader's).
 
 ## When a tool throws
 
 As on Android, an uncaught exception ends the tool: the page reloads (the nearest thing to a new
 process) and the home screen says "<tool> stopped" with the error. The full stack is printed to
 the console again after the reload. A reload rather than a return to the home screen because an
-exception while composing leaves Compose unable to draw anything again. Saved data survives:
-every store writes to localStorage synchronously. See `src/shell/lightweb/shell/CrashGuard.kt`.
+exception while composing leaves Compose unable to draw anything again. Before the reload, the
+tool's default uncaught exception handler hears of it (as on Android), and file writes on their
+way to IndexedDB are waited for, so saved data survives. See `src/shell/lightweb/shell/CrashGuard.kt`.
 
 Open the page with `?crashtest` to list a Crash tool that throws on purpose: while composing,
 in a click, or in a coroutine.
 
 ## Not yet
 
-- **Tools that need the network.** light-amp is next, and harder: browsers stop a page talking
-  to most music servers (CORS, http on https), and its local stream proxy needs sockets.
+- **A hosted build's network.** `tool/serve.mjs`'s proxy is local only; a public build would need
+  one somewhere (a small worker) or tools limited to sites that allow cross-origin requests.
+- **light-amp:** its local stream proxy needs sockets, and music servers are often plain http.
 - **More of the SDK client:** `LightWork`, audio, push, NFC, file sharing. Neither tool uses them.
 - **The SDK pinned per tool.** Today every tool builds against light-dnd's vendored SDK.
 

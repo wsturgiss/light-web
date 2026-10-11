@@ -7,8 +7,8 @@ plugins {
     id("org.jetbrains.compose") version "1.12.1"
 }
 
+// The SDK every tool compiles against: light-dnd's vendored copy (see docs/HANDOFF.md).
 val lightDnd = file(providers.gradleProperty("lightDnd.dir").get())
-val lightTraining = file(providers.gradleProperty("lightTraining.dir").get())
 val lightKeyboard = file(providers.gradleProperty("lightKeyboard.dir").get())
 val generated = layout.buildDirectory.dir("generated/lightweb")
 
@@ -25,16 +25,41 @@ data class Pack(val name: String, val rPackage: String, val res: File?, val asse
 val packs = listOf(
     Pack("sdk-ui", "com.thelightphone.sdk.ui", lightDnd.resolve("sdk/ui/src/main/res"), null),
     Pack("keyboard", "com.thelightphone.lp3Keyboard.ui", lightKeyboard.resolve("ui/src/main/res"), null),
-    Pack("dnd", "com.wsturgiss.dnd", lightDnd.resolve("tool/src/main/res"), lightDnd.resolve("tool/src/main/assets"), lightDnd.resolve("tool")),
-    Pack("training", "com.thelightphone.training", null, lightTraining.resolve("tool/src/main/assets"), lightTraining.resolve("tool")),
-)
+) + providers.gradleProperty("tools").get().split(Regex("\\s+")).filter { it.isNotEmpty() }.map { toolPack(file(it)) }
 val toolPacks = packs.filter { it.tool != null }
+
+/**
+ * A tool's pack, from its module directory alone, as the SDK's Gradle plugin reads it: the
+ * plugin makes `tool.id` in lighttool.toml the namespace, so it's the R package too. The pack is
+ * named after the id's last part (com.wsturgiss.dnd -> dnd).
+ */
+fun toolPack(dir: File): Pack {
+    val toml = dir.resolve("lighttool.toml")
+    check(toml.isFile) { "$dir has no lighttool.toml; `tools` in gradle.properties lists tool modules" }
+    val id = Regex("""(?m)^\s*id\s*=\s*"([^"]+)"""").find(toml.readText())?.groupValues?.get(1)
+        ?: error("$toml has no tool.id")
+    val main = dir.resolve("src/main")
+    return Pack(id.substringAfterLast('.'), id, main.resolve("res").takeIf { it.isDirectory }, main.resolve("assets").takeIf { it.isDirectory }, dir)
+}
 
 /**
  * Small, exact edits to upstream files, for the few things a stand-in can't reach. Each must
  * still match, or the build fails: that's how we find out upstream moved.
  */
 val rewrites = mapOf(
+    // Java's platform types: on the JVM `uri.host` and `attrs.getValue(name)` are `String!`, which
+    // Kotlin lets a tool use as nullable in one place and non-null in another. A stand-in has to
+    // pick; ours keep Java's real nullability, so a tool's non-null uses get the `!!` the JVM
+    // applies implicitly (it would throw there too, or store a null where Kotlin promises none).
+    "reader/com/yarosz/reader/CatalogueList.kt" to listOf(
+        "append(uri.host.lowercase())" to "append(uri.host!!.lowercase())",
+    ),
+    "reader/com/yarosz/reader/Network.kt" to listOf(
+        "uri.toASCIIString().substring(uri.scheme.length)" to "uri.toASCIIString().substring(uri.scheme!!.length)",
+    ),
+    "reader/com/yarosz/reader/Epub.kt" to listOf(
+        "spine += attrs.getValue(\"idref\") to" to "spine += attrs.getValue(\"idref\")!! to",
+    ),
     // The SDK's text editor with the embedded LP3 keyboard becomes LightTextInputEditorLp3; the
     // public LightTextInputEditor (src/sdk) picks it or a plain text field by DeviceMode.
     "ui/com/thelightphone/sdk/ui/LightTextInputEditor.kt" to listOf(

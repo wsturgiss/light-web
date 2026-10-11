@@ -13,4 +13,5 @@ object Log {
     fun w(tag: String, msg: String, tr: Throwable? = null): Int = 0.also { Logger.w(tr, tag) { msg } }
     fun w(tag: String, tr: Throwable): Int = w(tag, "", tr)
     fun e(tag: String, msg: String, tr: Throwable? = null): Int = 0.also { Logger.e(tr, tag) { msg } }
+    fun getStackTraceString(tr: Throwable?): String = tr?.stackTraceToString() ?: ""
 }

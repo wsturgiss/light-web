@@ -2,6 +2,11 @@ package lightweb.shell
 
 import kotlinx.browser.sessionStorage
 import kotlinx.browser.window
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import lightweb.compat.JvmThread
+import lightweb.compat.WebFiles
 import org.w3c.dom.events.Event
 
 /**
@@ -11,8 +16,9 @@ import org.w3c.dom.events.Event
  * A reload, not just going back to the home screen, because an exception while composing
  * leaves Compose dead: nothing redraws and no input is handled. An exception in a click or a
  * coroutine leaves the page running but the tool half-way through whatever it was doing, which
- * is no better. A tool's data is in localStorage and written synchronously, so what it saved
- * survives.
+ * is no better. Before the reload, the tool's default uncaught exception handler hears about it,
+ * as on Android, and file writes still on their way to IndexedDB are waited for (briefly), so
+ * what the tool saved survives.
  *
  * Only while a tool is open (or opening): an exception in the shell itself is logged and left
  * alone, so a broken shell can't reload forever.
@@ -51,9 +57,16 @@ object CrashGuard {
     private fun onUncaught(event: Event) {
         val tool = openTool ?: return
         openTool = null
-        runCatching { sessionStorage.setItem(KEY, "$tool\n${describe(event)}") }
-        window.location.reload()
+        val error = describe(event)
+        runCatching { sessionStorage.setItem(KEY, "$tool\n$error") }
+        JvmThread.reportUncaught(RuntimeException(error))
+        MainScope().launch {
+            withTimeoutOrNull(FLUSH_TIMEOUT_MS) { WebFiles.flush() }
+            window.location.reload()
+        }
     }
+
+    private const val FLUSH_TIMEOUT_MS = 2_000L
 }
 
 /** The stack (or message) of an `error` event's error, or an `unhandledrejection`'s reason. */

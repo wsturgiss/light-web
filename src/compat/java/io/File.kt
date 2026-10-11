@@ -1,123 +1,136 @@
 package java.io
 
-import kotlinx.browser.localStorage
+import java.nio.charset.Charset
+import lightweb.compat.WebFiles
+import kotlin.random.Random
 
 /**
- * The slice of `java.io.File` that tools use to keep a save file: text files in the tool's
- * `filesDir`, kept in localStorage so they survive a reload. Directories aren't stored; a path
- * is just a key.
+ * The slice of `java.io.File` that tools use: files in the tool's `filesDir`, kept by
+ * [WebFiles] (IndexedDB, read into memory when the tool opens). Directories aren't stored; a
+ * directory exists while a file is under it, and making one always succeeds.
+ *
+ * kotlin.io's extensions (`readText`, `nameWithoutExtension`...) are members here: off the JVM
+ * there's no kotlin.io.File for them to extend.
  */
-class File(path: String) {
+class File(path: String) : Comparable<File> {
     constructor(parent: File?, child: String) : this(if (parent == null) child else "${parent.path}/$child")
+    constructor(parent: String?, child: String) : this(parent?.let(::File), child)
 
     val path: String = path.trimEnd('/').ifEmpty { "/" }
     val name: String get() = path.substringAfterLast('/')
+    val nameWithoutExtension: String get() = name.substringBeforeLast('.')
+    val extension: String get() = name.substringAfterLast('.', "")
     val parent: String? get() = path.substringBeforeLast('/', "").ifEmpty { null }
     val parentFile: File? get() = parent?.let(::File)
     val absolutePath: String get() = path
+    val absoluteFile: File get() = this
+    val canonicalPath: String get() = normalize(path)
+    val canonicalFile: File get() = File(canonicalPath)
 
-    private val key get() = KEY_PREFIX + path
-
-    fun exists(): Boolean = localStorage.getItem(key) != null || isDirectory
-    val isDirectory: Boolean get() = keys().any { it.startsWith("$KEY_PREFIX$path/") }
-    val isFile: Boolean get() = localStorage.getItem(key) != null
+    fun exists(): Boolean = isFile || isDirectory
+    val isFile: Boolean get() = WebFiles.read(path) != null
+    val isDirectory: Boolean get() = WebFiles.paths().any { it.startsWith("$path/") }
 
     fun mkdirs(): Boolean = true
     fun mkdir(): Boolean = true
 
-    fun readText(): String = localStorage.getItem(key) ?: throw FileNotFoundException(path)
-
-    fun writeText(text: String) {
-        localStorage.setItem(key, text)
-        localStorage.setItem(MTIME_PREFIX + path, kotlin.time.Clock.System.now().toEpochMilliseconds().toString())
+    /** Like Java's: false if it already exists. */
+    fun createNewFile(): Boolean {
+        if (isFile) return false
+        WebFiles.write(path, ByteArray(0))
+        return true
     }
 
-    fun delete(): Boolean {
-        val had = isFile
-        localStorage.removeItem(key)
-        localStorage.removeItem(MTIME_PREFIX + path)
-        return had
+    fun readBytes(): ByteArray = WebFiles.read(path) ?: throw FileNotFoundException("$path (No such file or directory)")
+    fun readText(charset: Charset = Charset.UTF_8): String = charset.decode(readBytes())
+    fun readLines(charset: Charset = Charset.UTF_8): List<String> = readText(charset).lines().let { if (it.lastOrNull() == "") it.dropLast(1) else it }
+
+    fun writeBytes(bytes: ByteArray) = WebFiles.write(path, bytes.copyOf())
+    fun writeText(text: String, charset: Charset = Charset.UTF_8) = WebFiles.write(path, charset.encode(text))
+    fun appendBytes(bytes: ByteArray) = WebFiles.write(path, (WebFiles.read(path) ?: ByteArray(0)) + bytes)
+    fun appendText(text: String, charset: Charset = Charset.UTF_8) = appendBytes(charset.encode(text))
+
+    fun inputStream(): InputStream = FileInputStream(this)
+    fun outputStream(): FileOutputStream = FileOutputStream(this)
+
+    /** Deletes a file. A directory isn't stored, so there's nothing to delete for one. */
+    fun delete(): Boolean = WebFiles.delete(path)
+
+    fun deleteRecursively(): Boolean {
+        WebFiles.paths().filter { it.startsWith("$path/") }.forEach(WebFiles::delete)
+        WebFiles.delete(path)
+        return true
     }
 
     fun renameTo(dest: File): Boolean {
-        val text = localStorage.getItem(key) ?: return false
-        localStorage.setItem(dest.key, text)
-        localStorage.setItem(MTIME_PREFIX + dest.path, lastModified().toString())
-        localStorage.removeItem(key)
-        localStorage.removeItem(MTIME_PREFIX + path)
+        val bytes = WebFiles.read(path) ?: return false
+        WebFiles.write(dest.path, bytes, lastModified())
+        WebFiles.delete(path)
         return true
     }
 
-    fun length(): Long = (localStorage.getItem(key)?.length ?: 0).toLong()
+    fun length(): Long = WebFiles.size(path) ?: 0L
 
     /** Set on every write; tools can set it themselves, as on a real filesystem. */
-    fun lastModified(): Long = localStorage.getItem(MTIME_PREFIX + path)?.toLongOrNull() ?: 0L
+    fun lastModified(): Long = WebFiles.mtime(path) ?: 0L
 
     fun setLastModified(time: Long): Boolean {
         if (!isFile) return false
-        localStorage.setItem(MTIME_PREFIX + path, time.toString())
+        WebFiles.setMtime(path, time)
         return true
     }
 
-    fun readBytes(): ByteArray = readText().encodeToByteArray()
-
-    fun inputStream(): InputStream = ByteArrayInputStream(readBytes())
+    /** The browser gives a site a share of the disk; this doesn't ask how much is left. */
+    fun getUsableSpace(): Long = USABLE_SPACE
+    val usableSpace: Long get() = USABLE_SPACE
+    fun getFreeSpace(): Long = USABLE_SPACE
 
     /** The files directly in this directory (null if it doesn't exist, like Java). */
     fun listFiles(): Array<File>? {
-        val prefix = "$KEY_PREFIX$path/"
-        val children = keys().filter { it.startsWith(prefix) }
+        val prefix = "$path/"
+        val children = WebFiles.paths().filter { it.startsWith(prefix) }
             .map { it.removePrefix(prefix).substringBefore('/') }
             .distinct()
         if (children.isEmpty() && !exists()) return null
         return children.map { File(this, it) }.toTypedArray()
     }
 
+    fun listFiles(filter: FileFilter): Array<File>? = listFiles()?.filter { filter.accept(it) }?.toTypedArray()
+
     fun list(): Array<String>? = listFiles()?.map { it.name }?.toTypedArray()
 
+    override fun compareTo(other: File) = path.compareTo(other.path)
     override fun toString() = path
     override fun equals(other: Any?) = other is File && other.path == path
     override fun hashCode() = path.hashCode()
 
     companion object {
-        private const val KEY_PREFIX = "lightweb:file:"
-        private const val MTIME_PREFIX = "lightweb:mtime:"
+        const val separator = "/"
+        const val separatorChar = '/'
 
-        private fun keys(): List<String> = (0 until localStorage.length).mapNotNull { localStorage.key(it) }
-    }
-}
+        /** Generous, so a tool that checks space before writing goes ahead. */
+        private const val USABLE_SPACE = 1L shl 32
 
-open class IOException(message: String? = null, cause: Throwable? = null) : Exception(message, cause)
-
-class FileNotFoundException(message: String? = null) : IOException(message)
-
-/** `java.io.InputStream`, as far as reading a file through `use { }` goes. */
-abstract class InputStream : AutoCloseable {
-    abstract fun read(): Int
-
-    open fun read(b: ByteArray): Int = read(b, 0, b.size)
-
-    open fun read(b: ByteArray, off: Int, len: Int): Int {
-        var n = 0
-        while (n < len) {
-            val c = read()
-            if (c < 0) break
-            b[off + n++] = c.toByte()
+        fun createTempFile(prefix: String, suffix: String? = null, directory: File? = null): File {
+            val dir = directory ?: File("/tmp")
+            while (true) {
+                val f = File(dir, "$prefix${Random.nextLong().toULong()}${suffix ?: ".tmp"}")
+                if (f.createNewFile()) return f
+            }
         }
-        return if (n == 0 && len > 0) -1 else n
     }
-
-    open fun readBytes(): ByteArray {
-        val out = ArrayList<Byte>()
-        while (true) { val c = read(); if (c < 0) break; out.add(c.toByte()) }
-        return out.toByteArray()
-    }
-
-    override fun close() {}
 }
 
-class ByteArrayInputStream(private val bytes: ByteArray) : InputStream() {
-    private var pos = 0
-    override fun read(): Int = if (pos < bytes.size) bytes[pos++].toInt() and 0xff else -1
-    override fun readBytes(): ByteArray = bytes.copyOfRange(pos, bytes.size).also { pos = bytes.size }
+fun interface FileFilter {
+    fun accept(pathname: File): Boolean
+}
+
+private fun normalize(path: String): String {
+    val out = ArrayList<String>()
+    for (part in path.split('/')) when (part) {
+        "", "." -> Unit
+        ".." -> out.removeLastOrNull()
+        else -> out += part
+    }
+    return "/" + out.joinToString("/")
 }

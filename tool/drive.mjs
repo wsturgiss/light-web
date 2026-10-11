@@ -45,7 +45,7 @@ ws.addEventListener("message", ({ data }) => {
     log(`console.${m.params.type}: ${m.params.args.map((a) => a.value ?? a.description).join(" ").slice(0, 800)}`);
   if (m.method === "Runtime.exceptionThrown") {
     const d = m.params.exceptionDetails;
-    log(`EXCEPTION: ${(d.exception?.description ?? d.text).slice(0, 800)}`);
+    log(`EXCEPTION: ${(d.exception?.description ?? d.text).slice(0, 6000)}`);
   }
 });
 const send = (method, params = {}) => new Promise((r) => {

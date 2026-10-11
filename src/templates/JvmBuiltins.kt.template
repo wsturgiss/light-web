@@ -46,9 +46,49 @@ internal val Dispatchers.IO: CoroutineDispatcher get() = Dispatchers.Default
 /** `"%d:%02d".format(...)`. */
 internal fun String.format(vararg args: Any?): String = lightweb.compat.formatJvm(this, *args)
 
+/** `"%d".format(Locale.ROOT, ...)`. The locale doesn't change the format here. */
+internal fun String.format(locale: java.util.Locale?, vararg args: Any?): String = lightweb.compat.formatJvm(this, *args)
+
 /** `Map.toSortedMap()`. */
 internal fun <K : Comparable<K>, V> Map<out K, V>.toSortedMap(): Map<K, V> = sortedByKey()
 
 internal fun String.codePointAt(index: Int): Int = jvmCodePointAt(index)
 
 internal fun StringBuilder.appendCodePoint(codePoint: Int): StringBuilder = jvmAppendCodePoint(codePoint)
+
+/** `java.lang.Thread`. The page has one thread. */
+internal typealias Thread = lightweb.compat.JvmThread
+
+/** kotlin.text.Charsets, JVM-only. */
+internal typealias Charsets = lightweb.compat.JvmCharsets
+
+/** kotlin.jvm.JvmInline. Value classes need no annotation off the JVM. */
+internal annotation class JvmInline
+
+/** `String.toByteArray(charset)`, JVM-only. */
+internal fun String.toByteArray(charset: java.nio.charset.Charset = java.nio.charset.Charset.UTF_8): ByteArray = charset.encode(this)
+
+/** `ByteArray.toString(charset)`, JVM-only. */
+internal fun ByteArray.toString(charset: java.nio.charset.Charset): String = charset.decode(this)
+
+/** java.lang.String's constructors, and kotlin.text's over CharArray (deprecated as errors off the JVM). */
+internal fun String(bytes: ByteArray, charset: java.nio.charset.Charset = java.nio.charset.Charset.UTF_8): String = charset.decode(bytes)
+internal fun String(bytes: ByteArray, offset: Int, length: Int, charset: java.nio.charset.Charset = java.nio.charset.Charset.UTF_8): String = charset.decode(bytes, offset, length)
+internal fun String(chars: CharArray): String = chars.concatToString()
+internal fun String(chars: CharArray, offset: Int, length: Int): String = chars.concatToString(offset, offset + length)
+
+/** `String.format(Locale.ROOT, "%.1f", x)`. The locale doesn't change the format here. */
+internal fun String.Companion.format(locale: java.util.Locale?, format: String, vararg args: Any?): String = lightweb.compat.formatJvm(format, *args)
+internal fun String.Companion.format(format: String, vararg args: Any?): String = lightweb.compat.formatJvm(format, *args)
+
+/** java.util.List.replaceAll. Kotlin/Wasm's stdlib has one, but internal. */
+internal fun <T> MutableList<T>.replaceAll(operator: (T) -> T) {
+    val it = listIterator()
+    while (it.hasNext()) it.set(operator(it.next()))
+}
+
+/** java.util.Map.putIfAbsent, a JVM default method. */
+internal fun <K, V> MutableMap<K, V>.putIfAbsent(key: K, value: V): V? = get(key) ?: run { put(key, value); null }
+
+/** java.util.Map.computeIfAbsent, a JVM default method. */
+internal fun <K, V> MutableMap<K, V>.computeIfAbsent(key: K, mappingFunction: (K) -> V): V = get(key) ?: mappingFunction(key).also { put(key, it) }

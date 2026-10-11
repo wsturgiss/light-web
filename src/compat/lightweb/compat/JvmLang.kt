@@ -54,8 +54,7 @@ fun formatJvm(format: String, vararg args: Any?): String {
         val arg = args.getOrNull(next++)
         val body = when (conv) {
             "d" -> (arg as Number).toLong().toString()
-            "x" -> (arg as Number).toLong().let { if (arg is Byte || arg is Int) it.toInt().toUInt().toString(16) else it.toULong().toString(16) }
-            "X" -> (arg as Number).toLong().let { if (arg is Byte || arg is Int) it.toInt().toUInt().toString(16) else it.toULong().toString(16) }.uppercase()
+            "x", "X" -> hex(arg as Number).let { if (conv == "X") it.uppercase() else it }
             "f" -> fixed((arg as Number).toDouble(), precision.ifEmpty { "6" }.toInt())
             else -> arg.toString()
         }
@@ -72,6 +71,14 @@ fun formatJvm(format: String, vararg args: Any?): String {
     }
 }
 
+/** Java's %x: a negative value as its two's complement in the argument's own width (a Byte is two digits). */
+private fun hex(n: Number): String = when (n) {
+    is Byte -> (n.toInt() and 0xff).toString(16)
+    is Short -> (n.toInt() and 0xffff).toString(16)
+    is Int -> n.toUInt().toString(16)
+    else -> n.toLong().toULong().toString(16)
+}
+
 private fun fixed(x: Double, digits: Int): String {
     if (x.isNaN() || x.isInfinite()) return x.toString()
     val scale = 10.0.pow(digits)
@@ -80,4 +87,39 @@ private fun fixed(x: Double, digits: Int): String {
     val frac = (r - whole * scale).toLong()
     val sign = if (x < 0 && r != 0.0) "-" else ""
     return if (digits == 0) "$sign$whole" else "$sign$whole.${frac.toString().padStart(digits, '0')}"
+}
+
+/**
+ * `java.lang.Thread`, as tools use it: the current thread's name and the default uncaught
+ * exception handler. The page has one thread, "main". CrashGuard calls the handler with what it
+ * caught before the page reloads, as Android's runtime does before the process dies.
+ */
+class JvmThread private constructor(val name: String) {
+    fun getName(): String = name
+
+    fun interface UncaughtExceptionHandler {
+        fun uncaughtException(t: JvmThread, e: Throwable)
+    }
+
+    companion object {
+        private val main = JvmThread("main")
+        private var defaultHandler: UncaughtExceptionHandler? = null
+
+        fun currentThread(): JvmThread = main
+        fun getDefaultUncaughtExceptionHandler(): UncaughtExceptionHandler? = defaultHandler
+        fun setDefaultUncaughtExceptionHandler(handler: UncaughtExceptionHandler?) { defaultHandler = handler }
+
+        /** For CrashGuard: tells the tool's handler, if it set one. Never throws. */
+        fun reportUncaught(e: Throwable) {
+            runCatching { defaultHandler?.uncaughtException(main, e) }
+        }
+    }
+}
+
+/** `kotlin.text.Charsets`, which is JVM-only. */
+object JvmCharsets {
+    val UTF_8 = java.nio.charset.Charset.UTF_8
+    val US_ASCII = java.nio.charset.Charset.US_ASCII
+    val ISO_8859_1 = java.nio.charset.Charset.ISO_8859_1
+    val UTF_16 = java.nio.charset.Charset.UTF_16
 }

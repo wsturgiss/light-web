@@ -60,12 +60,14 @@ abstract class SimpleLightScreen<ResultType>(sealedActivity: SealedLightActivity
 }
 
 /**
- * What a tool gets instead of an Android Context. [filesDir] and [dataStore] are kept in
- * localStorage; assets come from the tool's pack, loaded before its first screen.
+ * What a tool gets instead of an Android Context. [filesDir] is kept in IndexedDB (WebFiles) and
+ * [dataStore] in localStorage; assets come from the tool's pack. Both the tool's files and its
+ * assets are loaded before its first screen.
  */
 class SealedLightContext internal constructor(internal val host: LightToolHost) {
     val filesDir: File by lazy { File("/data/${host.tool.id}/files") }
     val dataStore: DataStore<Preferences> by lazy { dataStores.getOrPut(host.tool.id) { webPreferencesDataStore(host.tool.id) } }
+    val connectivity: LightConnectivity by lazy { LightConnectivity() }
     fun readAsset(path: String): ByteArray = Assets.readAsset(host.tool.assetPack, path)
 }
 

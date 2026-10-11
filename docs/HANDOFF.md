@@ -49,7 +49,9 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | ✅ | 3. Tool registration generated from `lighttool.toml`, `@EntryPoint`, `@InitialScreen`, `@WebDatabase` | `6911746` |
 | ✅ | 4. Real libraries under the stand-ins: DataStore 1.3, kotlinx-datetime, Kermit; old preferences migrate | `e424a34` |
 | ✅ | Exercise light-training's untested screens. All worked; the one fix was mouse drags in the emulator | `892fc88` |
-| ⬜ | 5. Room 3 in place of the hand-written database: researched, not started. Plan below | waiting on a decision |
+| ✅ | Tools listed in `gradle.properties` (`tools=`); everything else derived from `lighttool.toml` | this commit |
+| ✅ | light-reader runs, unchanged: files on IndexedDB, zip, SAX, `java.net` + dev proxy, connectivity | this commit |
+| ⬜ | 5. Room 3 in place of the hand-written database: researched, not started. Plan below | Will: go ahead, timing ours |
 | ⬜ | 6. light-amp: needs a decision on approach (demo library or proxy server) | not started |
 | ⏸ | Hosting a public build, and a GitHub remote | deferred by Will: develop first |
 | ⬜ | 7. Longer term: if Light's SDK moved to multiplatform libraries, most of `src/compat` goes | outside our control |
@@ -76,7 +78,16 @@ secondary), rename, delete, and the in-use guard; data survives a reload. Mouse 
 in LP3 mode and not in computer mode; taps, the LP3 keyboard's keys and the mode switch still
 work under the conversion; light-dnd opens and taps work.
 
-**Never verified:** Interval Training and Interval Schemes (both "Coming soon" in the tool),
+light-reader in headless Chromium (2026-10-11), dev and production builds through
+`tool/serve.mjs`: Shelf (empty, then with books); Add a Book; Gutenberg's catalogue, Popular,
+a book's page; Standard Ebooks' new releases; downloading Alice (137 KB, through a 302 the tool
+followed itself) and Moby Dick (729 KB; the page froze for at most 514 ms); reading: first-run
+walkthrough, next/previous page, controls, Contents, a jump to Chapter I, "min left in this
+chapter", A+; place and font size after a reload. Also: an old localStorage file (light-dnd's
+save) moves to IndexedDB with its mtime; light-training's backup files land in IndexedDB.
+
+**Never verified:** light-reader's search, Add a Catalogue, removing a book, its crash
+diagnostics log after a real crash, a book over a few MB. Interval Training and Interval Schemes (both "Coming soon" in the tool),
 the training backup import, unit changes after data exists (distance unit on a cardio session).
 
 ## Decisions so far, and why
@@ -85,8 +96,13 @@ the training backup import, unit changes after data exists (distance unit on a c
 
 - **Compile tools unchanged; never edit upstream** (see Approach). Everything web-specific lives
   in light-web.
-- **One SDK copy for all tools** (light-dnd's vendored v0.2.0). light-training's is identical.
-  A tool on a different SDK version needs a decision first.
+- **Every tool builds against the latest light-sdk release only** (Will, 2026-10-11). Today
+  that's tag v0.2.0 (2026-10-08), the copy light-dnd vendors; light-training's and light-reader's
+  are identical. Follow release tags, not main (main is ahead of v0.2.0). A tool on an older SDK
+  is compiled against the latest anyway, and where that breaks it, the break is recorded as an
+  SDK-version mismatch, not a missing stand-in. Worth doing: take the SDK from
+  lightphone/light-sdk at the latest tag instead of from light-dnd, so light-web isn't tied to
+  one tool's checkout.
 - **Develop first; hosting and a GitHub remote later** (Will, 2026-10-10). When a remote is
   made, start it private: that's a backup at once, and "public source?" and "public build?" stay
   separate decisions. A public build fits GitHub Pages (static files). Before anything goes
@@ -123,6 +139,31 @@ the training backup import, unit changes after data exists (distance unit on a c
   `lighttool.toml`, entry point and first screen from `@EntryPoint`/`@InitialScreen`. The one
   thing that can't be generated, a hand-written Room database, is found by a `@WebDatabase`
   annotation, the same way.
+
+### Storage and network (light-reader, 2026-10-11)
+
+- **Files are bytes in IndexedDB** (`WebFiles`), read into memory when the tool opens, written
+  through as they change. localStorage holds a few MB per origin and stores text; a book is
+  binary and can be bigger. Reads stay synchronous, as Android's are. Cost: a write is committed
+  a moment after it's made, so `CrashGuard` waits (up to 2 s) for pending writes before its
+  reload; a tab closed in that moment can lose the last write.
+- **`HttpURLConnection` is a synchronous XHR.** The tool's code blocks on the call, as it does on
+  a background thread on Android; a page has no other thread, so it waits. Measured: about half
+  a second for a 700 KB book. The alternative, making the network asynchronous, would mean
+  changing how the tool calls it, which isn't ours to change.
+- **A local proxy in the dev server (`tool/serve.mjs`).** Standard Ebooks allows no cross-origin
+  requests, and Gutenberg's downloads redirect through a response that doesn't, so without it
+  only Gutenberg's browsing worked. The proxy also hands redirects back unfollowed, reports
+  connection failures by kind (DNS, refused, certificate, TLS, timeout) as the exceptions the tool
+  catches, and sends the tool's User-Agent, so light-reader's own redirect and error handling runs
+  as on the phone. It listens on 127.0.0.1 only. Local development only: **how a hosted build
+  reaches the network is still open** (the same question as light-amp's).
+- **Platform types get exact `!!` rewrites.** Java's `String!` can be used as nullable or not,
+  and light-reader does both with the same call. Stand-ins keep Java's real nullability, and
+  the three non-null uses get the `!!` the JVM applies implicitly (see `rewrites`).
+- **Parsers are ours, in Kotlin:** inflate (after zlib's `puff`) and a non-validating SAX parser
+  following Xerces' behaviour. The browser's are asynchronous (DecompressionStream) or build a
+  DOM (DOMParser).
 
 ### Libraries
 
@@ -237,6 +278,8 @@ Checked against the published artifacts and light-training's source:
   `painterResource(R.drawable)`, `Font(R.font)`, `SystemFonts`, `Resources.getIdentifier`, ...).
   DataStore Preferences is the real androidx DataStore 1.3 (alpha), made in
   `src/sdk/lightweb/WebPreferencesDataStore.kt`.
+- `tool/serve.mjs`: dev server, static files plus the network proxy. `tool/drive.mjs`: drives
+  headless Chromium.
 - `src/sdk`: the SDK client rewritten for the web: `LightToolHost` (replaces LightActivity:
   back stack + lifecycle), `SimpleLightScreen`/`LightScreen`, `SealedLightContext`,
   `buildDatabase`, `Assets` loader, `DeviceMode`, web keyboard input, mode-switching
@@ -271,6 +314,13 @@ assets.
 - A crash reloads the whole page, so a tool's in-memory state (and any other open tool's) goes
   with it, as a process death would on Android. Saved data survives.
 - `WebTrainingDatabase` mirrors light-training's schema v11 by hand and won't notice changes.
+- Production stacks have no function names. For a readable one, build
+  `wasmJsBrowserDevelopmentExecutableDistribution` and serve `build/dist/wasmJs/developmentExecutable`.
+- Each port is its own origin, with its own storage: a build served on 8766 doesn't see 8765's
+  books or saves.
+- No unit tests yet for the new pure-logic stand-ins (URI, inflate, the XML parser, URLEncoder,
+  `%x`). They're checked only by light-reader running. One bug already slipped through and was
+  caught by running: URI's fields were shifted by one.
 
 ## Found in tools (not light-web's to fix)
 
@@ -288,7 +338,8 @@ assets.
 
 ## Open questions for Will
 
-- **Room 3:** run the spike now (recommended), or keep waiting for a second tool that needs a
-  database?
+- **Room 3:** answered (2026-10-11): go ahead, timing ours.
+- **Network for a hosted build:** a proxy (a small worker, which costs a service and abuse
+  limits), or tools limited to sites that allow cross-origin requests?
 - **light-amp:** demo library, or a proxy server?
 - **Hosting and a GitHub remote:** deferred until development is further along.
