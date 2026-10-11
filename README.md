@@ -55,13 +55,18 @@ src/tools    per-tool web code: light-training's database, the crash test tool â
 - **Android APIs a tool imports are provided under their Android names** (`src/compat`):
   `android.util.Log`, `android.view.KeyEvent`, `java.io.File`, `BitmapFactory`, `LocalContext`,
   `LocalConfiguration`, `painterResource(R.drawable.x)`, `Font(R.font.x)` and so on. Each does
-  only as much as tools use.
+  only as much as tools use. Where a real multiplatform library has a wasm build, the stand-in
+  is built on it, or is it: DataStore Preferences is androidx DataStore 1.3 itself (alpha),
+  `java.time.LocalDate` and `DateTimeFormatter` are kotlinx-datetime underneath, and
+  `android.util.Log` is Kermit.
 - **Resources.** Each pack's `res/` and `assets/` are served under `assets/<pack>/`, and an `R`
   class with Android's shape is generated per pack, so `R.font.mek_sans` compiles unchanged.
   Android reads assets synchronously and tools rely on it, so a tool's whole pack is fetched
   when it's opened, before its first screen.
 - **Storage.** `java.io.File` and the SDK's `dataStore` are backed by localStorage, so a tool's
-  data survives a reload (per browser, per origin).
+  data survives a reload (per browser, per origin). The `dataStore` is DataStore's own
+  `WebLocalStorage`, at `lightweb:prefs:<tool id>`; what light-web's earlier stand-in saved is
+  migrated on first open.
 - **Room databases are the one thing written per tool.** Room has no wasm build, so a tool's
   database is a hand-written implementation of its own DAO interfaces over JSON tables
   (`src/tools/training/WebTrainingDatabase.kt`), marked `@WebDatabase(TrainingDatabase::class)`. It has
@@ -111,5 +116,5 @@ in a click, or in a coroutine.
 
 ## Size
 
-Production, gzipped: about 1.3 MB of app wasm and 3.3 MB of Skia (Compose's renderer), plus
+Production, gzipped: about 1.5 MB of app wasm and 3.3 MB of Skia (Compose's renderer), plus
 each tool's assets when it's opened (light-dnd: 6.4 MB, mostly dice art; light-training: none).

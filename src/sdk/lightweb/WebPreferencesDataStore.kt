@@ -1,93 +1,70 @@
 package lightweb
 
+import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.core.okio.WebLocalStorage
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.PreferencesSerializer
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlinx.browser.localStorage
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * A tool's preferences DataStore, kept in localStorage as JSON. Each value is stored with its
- * type, since Preferences keys are typed and JSON numbers aren't.
+ * A tool's preferences DataStore: the real androidx DataStore (1.3 has a wasm build), kept in
+ * localStorage under `lightweb:prefs:<tool id>`. A corrupt entry starts over empty rather than
+ * failing every read.
  */
-class WebPreferencesDataStore(name: String) : DataStore<Preferences> {
-    private val storageKey = "lightweb:datastore:$name"
-    private val mutex = Mutex()
-    private val state = MutableStateFlow(load())
-
-    override val data: StateFlow<Preferences> = state
-
-    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
-        mutex.withLock {
-            val next = transform(state.value)
-            state.value = next
-            runCatching { localStorage.setItem(storageKey, encode(next).toString()) }
-            next
-        }
-
-    private fun load(): Preferences {
-        val text = runCatching { localStorage.getItem(storageKey) }.getOrNull() ?: return emptyPreferences()
-        return runCatching { decode(Json.parseToJsonElement(text).jsonObject) }.getOrElse { emptyPreferences() }
-    }
-
-    private fun encode(p: Preferences): JsonObject = JsonObject(
-        p.asMap().mapKeys { it.key.name }.mapValues { (_, v) ->
-            val (type, value) = when (v) {
-                is String -> "s" to JsonPrimitive(v)
-                is Boolean -> "b" to JsonPrimitive(v)
-                is Int -> "i" to JsonPrimitive(v)
-                is Long -> "l" to JsonPrimitive(v)
-                is Float -> "f" to JsonPrimitive(v)
-                is Double -> "d" to JsonPrimitive(v)
-                is Set<*> -> "ss" to JsonArray(v.map { JsonPrimitive(it as String) })
-                else -> error("Unsupported preference type ${v::class.simpleName}")
-            }
-            JsonObject(mapOf("t" to JsonPrimitive(type), "v" to value))
-        }
+fun webPreferencesDataStore(toolId: String): DataStore<Preferences> =
+    PreferenceDataStoreFactory.create(
+        storage = WebLocalStorage(PreferencesSerializer, "lightweb:prefs:$toolId"),
+        corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+        migrations = listOf(JsonPreferencesMigration(toolId)),
     )
 
-    private fun decode(o: JsonObject): Preferences {
-        val p = emptyPreferences().toMutablePreferences()
-        for ((name, entry) in o) {
-            val e = entry.jsonObject
-            val v: JsonElement = e["v"] ?: continue
-            when (e["t"]?.jsonPrimitive?.content) {
-                "s" -> p[stringPreferencesKey(name)] = v.jsonPrimitive.content
-                "b" -> p[booleanPreferencesKey(name)] = v.jsonPrimitive.boolean
-                "i" -> p.setInt(name, v.jsonPrimitive.content.toInt())
-                "l" -> p[longPreferencesKey(name)] = v.jsonPrimitive.content.toLong()
-                "f" -> p.setFloat(name, v.jsonPrimitive.content.toFloat())
-                "d" -> p[doublePreferencesKey(name)] = v.jsonPrimitive.content.toDouble()
-                "ss" -> p[stringSetPreferencesKey(name)] = v.jsonArray.map { it.jsonPrimitive.content }.toSet()
+/**
+ * Brings over what light-web's own DataStore stand-in saved before the real one replaced it:
+ * JSON at `lightweb:datastore:<tool id>`, each value tagged with its type. Removed once read.
+ */
+private class JsonPreferencesMigration(toolId: String) : DataMigration<Preferences> {
+    private val oldKey = "lightweb:datastore:$toolId"
+
+    override suspend fun shouldMigrate(currentData: Preferences) =
+        runCatching { localStorage.getItem(oldKey) }.getOrNull() != null
+
+    override suspend fun migrate(currentData: Preferences): Preferences {
+        val text = localStorage.getItem(oldKey) ?: return currentData
+        val p = currentData.toMutablePreferences()
+        runCatching {
+            for ((name, entry) in Json.parseToJsonElement(text).jsonObject) {
+                val v = entry.jsonObject["v"] ?: continue
+                when (entry.jsonObject["t"]?.jsonPrimitive?.content) {
+                    "s" -> p[stringPreferencesKey(name)] = v.jsonPrimitive.content
+                    "b" -> p[booleanPreferencesKey(name)] = v.jsonPrimitive.boolean
+                    "i" -> p[intPreferencesKey(name)] = v.jsonPrimitive.content.toInt()
+                    "l" -> p[longPreferencesKey(name)] = v.jsonPrimitive.content.toLong()
+                    "f" -> p[floatPreferencesKey(name)] = v.jsonPrimitive.content.toFloat()
+                    "d" -> p[doublePreferencesKey(name)] = v.jsonPrimitive.content.toDouble()
+                    "ss" -> p[stringSetPreferencesKey(name)] = v.jsonArray.map { it.jsonPrimitive.content }.toSet()
+                }
             }
         }
-        return p
+        return p.toPreferences()
     }
-}
 
-private fun MutablePreferences.setInt(name: String, v: Int) {
-    this[androidx.datastore.preferences.core.intPreferencesKey(name)] = v
-}
-
-private fun MutablePreferences.setFloat(name: String, v: Float) {
-    this[androidx.datastore.preferences.core.floatPreferencesKey(name)] = v
+    override suspend fun cleanUp() {
+        runCatching { localStorage.removeItem(oldKey) }
+    }
 }
