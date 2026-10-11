@@ -15,15 +15,20 @@ val generated = layout.buildDirectory.dir("generated/lightweb")
 /**
  * A set of Android resources and assets to serve to the page, and the `R` class Kotlin code
  * reaches them through. [name] is the URL prefix: `assets/<name>/res/...`, `assets/<name>/assets/...`.
+ *
+ * A pack with a [tool] is a tool: the module holding its `lighttool.toml`. Its sources are synced
+ * into `upstream/<name>` and it's registered on the home screen (see generateToolRegistry), in
+ * this order.
  */
-data class Pack(val name: String, val rPackage: String, val res: File?, val assets: File?)
+data class Pack(val name: String, val rPackage: String, val res: File?, val assets: File?, val tool: File? = null)
 
 val packs = listOf(
     Pack("sdk-ui", "com.thelightphone.sdk.ui", lightDnd.resolve("sdk/ui/src/main/res"), null),
     Pack("keyboard", "com.thelightphone.lp3Keyboard.ui", lightKeyboard.resolve("ui/src/main/res"), null),
-    Pack("dnd", "com.wsturgiss.dnd", lightDnd.resolve("tool/src/main/res"), lightDnd.resolve("tool/src/main/assets")),
-    Pack("training", "com.thelightphone.training", null, lightTraining.resolve("tool/src/main/assets")),
+    Pack("dnd", "com.wsturgiss.dnd", lightDnd.resolve("tool/src/main/res"), lightDnd.resolve("tool/src/main/assets"), lightDnd.resolve("tool")),
+    Pack("training", "com.thelightphone.training", null, lightTraining.resolve("tool/src/main/assets"), lightTraining.resolve("tool")),
 )
+val toolPacks = packs.filter { it.tool != null }
 
 /**
  * Small, exact edits to upstream files, for the few things a stand-in can't reach. Each must
@@ -60,8 +65,7 @@ val syncUpstreamSources by tasks.registering(Sync::class) {
             "**/HardwareKeyboardInput.kt", // reads Android InputDevices
         )
     }
-    from(lightDnd.resolve("tool/src/main/kotlin")) { into("dnd") }
-    from(lightTraining.resolve("tool/src/main/kotlin")) { into("training") }
+    for (p in toolPacks) from(p.tool!!.resolve("src/main/kotlin")) { into(p.name) }
     into(generated.map { it.dir("upstream") })
 
     doLast {
@@ -254,6 +258,99 @@ val generateJvmBuiltins by tasks.registering(GenerateJvmBuiltins::class) {
     outputDir.set(generated.map { it.dir("builtins") })
 }
 
+/**
+ * Writes `lightweb.generated.generatedTools`: a LightTool per tool pack, from what Android's SDK
+ * build reads too. The id and label come from `lighttool.toml`; the entry point and first screen
+ * are the classes marked @EntryPoint and @InitialScreen in the tool's sources (KSP finds them on
+ * Android); its Room databases are the classes marked @WebDatabase under src/tools/<pack>.
+ */
+abstract class GenerateToolRegistry : DefaultTask() {
+    @get:Input abstract val packNames: ListProperty<String>
+    @get:InputFiles abstract val manifests: ConfigurableFileCollection
+    @get:InputDirectory abstract val upstreamDir: DirectoryProperty
+    @get:InputDirectory abstract val ownToolsDir: DirectoryProperty
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    private class Found(val file: File, val pkg: String, val name: String)
+
+    /** Every `@<annotation>`-marked class or object in [dir], with what follows the annotation. */
+    private fun find(dir: File, annotation: String): List<Pair<Found, String>> {
+        val packageLine = Regex("""^package\s+([\w.]+)""", RegexOption.MULTILINE)
+        val marked = Regex("""^@$annotation\b(\([^)]*\))?\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:(?:internal|public|data|abstract|open)\s+)*(?:class|object)\s+(\w+)""", RegexOption.MULTILINE)
+        if (!dir.isDirectory) return emptyList()
+        return dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.flatMap { f ->
+            val text = f.readText()
+            val pkg = packageLine.find(text)?.groupValues?.get(1) ?: ""
+            marked.findAll(text).map { Found(f, pkg, it.groupValues[2]) to it.groupValues[1] }
+        }.toList()
+    }
+
+    private fun Found.qualified() = if (pkg.isEmpty()) name else "$pkg.$name"
+
+    private fun tomlString(toml: File, key: String): String {
+        val section = toml.readText().substringAfter("[tool]", "").substringBefore("\n[")
+        val value = Regex("""^$key\s*=\s*"([^"]*)"""", RegexOption.MULTILINE).find(section)?.groupValues?.get(1)
+        return checkNotNull(value) { "$toml has no [tool] $key" }
+    }
+
+    private fun kotlinString(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$") + "\""
+
+    @TaskAction
+    fun generate() {
+        val tools = packNames.get().zip(manifests.files.toList()).map { (pack, toml) ->
+            val sources = upstreamDir.get().asFile.resolve(pack)
+            val screens = find(sources, "InitialScreen").map { it.first }
+            val entryPoints = find(sources, "EntryPoint").map { it.first }
+            val screen = screens.singleOrNull()
+                ?: error("$pack needs exactly one @InitialScreen class; found ${screens.map { it.qualified() }}")
+            check(entryPoints.size <= 1) { "$pack has more than one @EntryPoint: ${entryPoints.map { it.qualified() }}" }
+            val databases = find(ownToolsDir.get().asFile.resolve(pack), "WebDatabase").map { (impl, args) ->
+                // The database class as the annotation names it, resolved through the file's imports.
+                val of = Regex("""\(\s*(?:of\s*=\s*)?([\w.]+)::class\s*\)""").find(args)?.groupValues?.get(1)
+                    ?: error("${impl.file}: @WebDatabase needs the database class, as @WebDatabase(Foo::class)")
+                val imported = Regex("""^import\s+([\w.]+\.$of)\s*$""", RegexOption.MULTILINE).find(impl.file.readText())?.groupValues?.get(1)
+                val dbClass = when {
+                    '.' in of -> of
+                    imported != null -> imported
+                    else -> "${impl.pkg}.$of"
+                }
+                "$dbClass::class to { name -> ${impl.qualified()}(name) }"
+            }
+            buildString {
+                appendLine("    LightTool(")
+                appendLine("        id = ${kotlinString(tomlString(toml, "id"))},")
+                appendLine("        name = ${kotlinString(tomlString(toml, "label"))},")
+                appendLine("        assetPack = ${kotlinString(pack)},")
+                appendLine("        entryPoint = ${entryPoints.singleOrNull()?.qualified() ?: "null"},")
+                appendLine("        initialScreen = { ${screen.qualified()}(it) },")
+                if (databases.isNotEmpty()) appendLine("        databases = mapOf(${databases.joinToString()}),")
+                appendLine("    ),")
+            }
+        }
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        out.resolve("lightweb/generated").apply { mkdirs() }.resolve("Tools.kt").writeText(buildString {
+            appendLine("// Generated by light-web (generateToolRegistry in build.gradle.kts). Do not edit.")
+            appendLine("package lightweb.generated")
+            appendLine()
+            appendLine("import lightweb.LightTool")
+            appendLine()
+            appendLine("/** Every tool pack in build.gradle.kts, in its order. */")
+            appendLine("val generatedTools: List<LightTool> = listOf(")
+            tools.forEach(::append)
+            appendLine(")")
+        })
+    }
+}
+
+val generateToolRegistry by tasks.registering(GenerateToolRegistry::class) {
+    packNames.set(toolPacks.map { it.name })
+    manifests.from(toolPacks.map { it.tool!!.resolve("lighttool.toml") })
+    upstreamDir.set(layout.dir(syncUpstreamSources.map { it.destinationDir }))
+    ownToolsDir.set(file("src/tools"))
+    outputDir.set(generated.map { it.dir("registry") })
+}
+
 kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
@@ -275,6 +372,7 @@ kotlin {
             kotlin.srcDir(syncUpstreamSources)
             kotlin.srcDir(generateResources)
             kotlin.srcDir(generateJvmBuiltins)
+            kotlin.srcDir(generateToolRegistry)
             resources.srcDir("src/web")
             resources.srcDir(syncWebAssets)
 

@@ -4,8 +4,7 @@ import com.thelightphone.sdk.shared.LightServerData
 import kotlinx.coroutines.flow.StateFlow
 
 // The SDK's annotations and entry point, as the Android SDK declares them (less @Keep). On
-// Android, KSP finds them and generates a registry; here each tool registers itself in
-// src/tools (see lightweb.LightTool).
+// Android, KSP finds them and generates a registry; here the build does (generateToolRegistry).
 
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)

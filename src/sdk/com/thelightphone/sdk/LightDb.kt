@@ -5,7 +5,7 @@ import kotlin.reflect.KClass
 
 /**
  * The SDK's `buildDatabase`. Room has no wasm target, so there's nothing to build from the
- * class: the tool's registration (LightTool.databases) supplies a hand-written web
+ * class: the tool's registration (LightTool.databases, from @WebDatabase) supplies a hand-written web
  * implementation, and this hands it out, one per name, for the life of the page.
  */
 fun <T : RoomDatabase> SealedLightContext.buildDatabase(dbClass: KClass<T>, dbName: String?): T {
@@ -14,7 +14,7 @@ fun <T : RoomDatabase> SealedLightContext.buildDatabase(dbClass: KClass<T>, dbNa
     @Suppress("UNCHECKED_CAST")
     return openDatabases.getOrPut(key) {
         val factory = tool.databases[dbClass]
-            ?: error("${tool.name} has no web implementation of ${dbClass.simpleName}; add one to its LightTool.databases")
+            ?: error("${tool.name} has no web implementation of ${dbClass.simpleName}; write one in src/tools/${tool.assetPack} marked @WebDatabase")
         factory(dbName ?: dbClass.simpleName ?: "db")
     } as T
 }

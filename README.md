@@ -40,7 +40,7 @@ D-pad and volume keys. Below the screen:
 src/compat   stand-ins for the android.* / java.* / androidx Android-only APIs ─────┤
 src/sdk      the SDK's client side, for the web (screens, host, assets) ────────────┼─> one Kotlin/Wasm
 src/shell    LightOS's part: the screen, the tool list, launching ─────────────────┤    module
-src/tools    per-tool registration (and light-training's database) ────────────────┘
+src/tools    per-tool web code: light-training's database, the crash test tool ────┘
 ```
 
 - **JVM names used without an import** (`Math`, `"%d".format`, `Foo::class.java`,
@@ -64,7 +64,7 @@ src/tools    per-tool registration (and light-training's database) ────�
   data survives a reload (per browser, per origin).
 - **Room databases are the one thing written per tool.** Room has no wasm build, so a tool's
   database is a hand-written implementation of its own DAO interfaces over JSON tables
-  (`src/tools/training/WebTrainingDatabase.kt`), registered in its `LightTool.databases`. It has
+  (`src/tools/training/WebTrainingDatabase.kt`), marked `@WebDatabase(TrainingDatabase::class)`. It has
   to track the tool's schema by hand. Room 3 (alpha) does have a wasm build over SQLite; if more
   tools need a database, that's the way to stop writing these.
 - **Files replaced on the web** (excluded from the sync, rewritten in `src/sdk`):
@@ -80,13 +80,15 @@ src/tools    per-tool registration (and light-training's database) ────�
 
 ## Adding a tool
 
-1. Add its checkout to `gradle.properties`, its pack to `packs` in `build.gradle.kts`, and its
-   sources to `syncUpstreamSources`. Every tool builds against one copy of the SDK (light-dnd's
-   today), so its vendored SDK must match.
-2. Register it in `src/tools/<tool>/` (a `LightTool` naming its initial screen and entry point,
-   which on Android KSP finds), and list it in `src/shell/lightweb/shell/Tools.kt`.
-3. If it uses Room, write its database (see `WebTrainingDatabase.kt`).
-4. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
+1. Add its checkout to `gradle.properties` and its pack to `packs` in `build.gradle.kts`, with
+   `tool` set to the module holding its `lighttool.toml`. That's the registration: the build
+   syncs its sources and writes its `LightTool` (`generateToolRegistry`): id and label from
+   `lighttool.toml`, entry point and first screen from its `@EntryPoint` and `@InitialScreen`
+   classes, as KSP finds them on Android. Every tool builds against one copy of the SDK
+   (light-dnd's today), so its vendored SDK must match.
+2. If it uses Room, write its database in `src/tools/<pack>/`, marked `@WebDatabase(Foo::class)`
+   (see `WebTrainingDatabase.kt`).
+3. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
    `src/compat` under the real Android/Java names.
 
 ## When a tool throws

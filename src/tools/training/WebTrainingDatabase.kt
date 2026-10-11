@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import lightweb.WebDatabase
 
 /**
  * light-training's TrainingDatabase, for the web: the tool's own DAO interfaces
@@ -28,6 +29,7 @@ import kotlinx.serialization.json.long
  * tool's schema or queries change, this has to change with it: compare against TrainingDao.kt
  * and TrainingEntities.kt (schema version 11).
  */
+@WebDatabase(TrainingDatabase::class)
 internal class WebTrainingDatabase(name: String) : TrainingDatabase() {
 
     private data class Tables(

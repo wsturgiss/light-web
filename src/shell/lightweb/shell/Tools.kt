@@ -1,13 +1,10 @@
 package lightweb.shell
 
 import kotlinx.browser.window
+import lightweb.generated.generatedTools
 import lightweb.tools.CrashTestTool
-import lightweb.tools.DndTool
-import lightweb.tools.TrainingTool
 
-/** Every tool in this build, in the order the home screen lists them. */
-val tools = listOfNotNull(
-    DndTool,
-    TrainingTool,
+/** Every tool in this build, in the order the home screen lists them (see `packs` in build.gradle.kts). */
+val tools = generatedTools + listOfNotNull(
     CrashTestTool.takeIf { "crashtest" in window.location.search },
 )
