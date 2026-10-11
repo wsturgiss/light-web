@@ -64,6 +64,7 @@ private sealed interface ShellState {
 fun LightOsShell() {
     var state by remember { mutableStateOf<ShellState>(ShellState.Starting) }
     var greyscale by remember { mutableStateOf(true) }
+    var crash by remember { mutableStateOf(CrashGuard.lastCrash) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -75,9 +76,14 @@ fun LightOsShell() {
     LaunchedEffect(greyscale) { setGreyscale(greyscale) }
 
     fun open(tool: LightTool) {
+        crash = null
+        CrashGuard.toolOpening(tool.name)
         scope.launch {
             Assets.load(tool.assetPack) { done, total -> state = ShellState.Loading(tool, done, total) }
-            val host = LightToolHost(tool) { state = ShellState.Home }
+            val host = LightToolHost(tool) {
+                CrashGuard.toolClosed()
+                state = ShellState.Home
+            }
             tool.entryPoint?.let { ep -> scope.launch { ep.onToolCreate(MutableStateFlow(null)) } }
             state = ShellState.Running(host)
         }
@@ -133,7 +139,7 @@ fun LightOsShell() {
                 ) {
                     val colors by LightThemeController.colors.collectAsState()
                     LightTheme(colors = colors) {
-                        Screen(state, onOpen = ::open)
+                        Screen(state, crash, onOpen = ::open)
                     }
                 }
             }
@@ -148,10 +154,10 @@ fun LightOsShell() {
 }
 
 @Composable
-private fun Screen(state: ShellState, onOpen: (LightTool) -> Unit) {
+private fun Screen(state: ShellState, crash: CrashGuard.Crash?, onOpen: (LightTool) -> Unit) {
     when (state) {
         ShellState.Starting -> Unit
-        ShellState.Home -> Home(tools, onOpen)
+        ShellState.Home -> Home(tools, crash, onOpen)
         is ShellState.Loading -> Loading(state.done, state.total)
         is ShellState.Running -> state.host.Content()
     }

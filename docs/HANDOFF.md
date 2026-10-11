@@ -44,6 +44,7 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | `a276a96` | light-dnd runs in the browser. Shell, tool host, Android stand-ins, asset loading. |
 | `f78a3a2` | Light's real LP3 keyboard (lightphone/light-keyboard v0.0.19), compiled unchanged. Mode switch. |
 | `d00f511` | light-training runs. Room/DataStore/java.time/UUID/SHA-256 stand-ins; LightScreen + view models; hand-written database. Esc and back fixes. |
+| (next) | Crash isolation: a tool's uncaught exception reloads the page to the home screen with "<tool> stopped". `?crashtest` lists a tool that throws on purpose. |
 
 Verified by hand in Chrome (no automated tests): dnd home, dice roll, rules search, save
 survives reload; LP3 keyboard tapping + computer keys + Backspace/Return; computer mode;
@@ -89,6 +90,10 @@ Full rebuild ≈ 1 min. Output ≈ 4.7 MB gzipped plus each tool's assets.
 - **Assets are fetched whole when a tool opens.** Android reads assets synchronously.
 - **Akkurat is not bundled** (licence). SDK text uses the default font. A licensed copy in a
   pack's `res/font` is picked up automatically.
+- **A tool crash reloads the page** rather than returning to the home screen in place: an
+  exception while composing leaves Compose dead (measured: nothing redraws, Esc ignored), and
+  `ComposeViewport` can't be torn down and remade. Exceptions in clicks and coroutines leave the
+  page alive but the tool half-done, so they're treated the same, as Android would.
 - **Room databases are hand-written per tool for now.** Will chose to let a general solution
   "earn its way in" (see next steps).
 
@@ -97,14 +102,18 @@ Full rebuild ≈ 1 min. Output ≈ 4.7 MB gzipped plus each tool's assets.
 - Kotlin 2.3.20's wasm compiler intermittently crashes reading its own previous output.
   `compileKotlinWasmJs` deletes that output first, and incremental compilation is off. If it
   recurs: `rm -rf build/kotlin build/classes`.
-- An exception in a tool kills the whole page (no crash isolation yet).
+- A crash reloads the whole page, so a tool's in-memory state (and any other open tool's) goes
+  with it, as a process death would on Android. Saved data survives.
 - `WebTrainingDatabase` mirrors light-training's schema v11 by hand and won't notice changes.
 - Browser automation in this setup may attach to the wrong browser profile; check before
-  driving it.
+  driving it. The Chrome extension's tab is also often in the background (`hidden`), where
+  nothing renders and screenshots time out. Headless Chromium over CDP (`chromium --headless=new
+  --remote-debugging-port=...`, driven from Node's built-in WebSocket) works without touching
+  Will's browser.
 
 ## Next steps, in order
 
-1. **Crash isolation**: catch tool exceptions, return to the home screen.
+1. ~~Crash isolation~~: done. A tool's exception reloads the page to the home screen.
 2. **Generate per-package JVM shims** (`Math`, `String.format`, `::class.java`, `Dispatchers.IO`)
    in the build instead of copying files per package.
 3. **Generate tool registration** from `@InitialScreen` / `@EntryPoint`.

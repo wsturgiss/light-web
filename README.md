@@ -87,13 +87,22 @@ src/tools    per-tool registration and JVM-name shims ────────�
 5. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
    `src/compat` under the real Android/Java names.
 
+## When a tool throws
+
+As on Android, an uncaught exception ends the tool: the page reloads (the nearest thing to a new
+process) and the home screen says "<tool> stopped" with the error. The full stack is printed to
+the console again after the reload. A reload rather than a return to the home screen because an
+exception while composing leaves Compose unable to draw anything again. Saved data survives:
+every store writes to localStorage synchronously. See `src/shell/lightweb/shell/CrashGuard.kt`.
+
+Open the page with `?crashtest` to list a Crash tool that throws on purpose: while composing,
+in a click, or in a coroutine.
+
 ## Not yet
 
 - **Tools that need the network.** light-amp is next, and harder: browsers stop a page talking
   to most music servers (CORS, http on https), and its local stream proxy needs sockets.
 - **More of the SDK client:** `LightWork`, audio, push, NFC, file sharing. Neither tool uses them.
-- **Crash isolation.** An exception in a tool takes down the whole page; the shell should catch
-  it and return to the home screen.
 - **The SDK pinned per tool.** Today every tool builds against light-dnd's vendored SDK.
 
 ## Size
