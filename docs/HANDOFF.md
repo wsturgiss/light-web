@@ -51,12 +51,15 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | ✅ | Exercise light-training's untested screens. All worked; the one fix was mouse drags in the emulator | `892fc88` |
 | ✅ | Tools listed in `gradle.properties` (`tools=`); everything else derived from `lighttool.toml` | `8e69d4f` |
 | ✅ | light-reader runs, unchanged: files on IndexedDB, zip, SAX, `java.net` + dev proxy, connectivity | `8e69d4f` |
-| ✅ | SDK from a light-sdk checkout at its latest tag; tools on other versions rejected before compiling | this commit |
-| ✅ | Onboarding log (`docs/TOOL-ONBOARDING.md`) and `tool/unresolved-names.mjs` | this commit |
-| ✅ | API scanner (`tool/api-scan`), checked against light-reader; coverage target in `docs/API-COVERAGE.md` | this commit |
-| ⬜ | Scan the public tools in `docs/TOOL-CATALOG.md` (clone into `~/Projects/light-web-corpus/`) | next |
-| ⬜ | 5. Room 3 in place of the hand-written database: researched, not started. Plan below | Will: go ahead, timing ours |
-| ⬜ | 6. light-amp: needs a decision on approach (demo library or proxy server) | not started |
+| ✅ | SDK from a light-sdk checkout at its latest tag; tools on other versions rejected before compiling | `6f48e3f` |
+| ✅ | Onboarding log (`docs/TOOL-ONBOARDING.md`) and `tool/unresolved-names.mjs` | `6f48e3f` |
+| ✅ | API scanner (`tool/api-scan`), checked against light-reader; coverage target in `docs/API-COVERAGE.md` | `ff99220` |
+| ⬜ | Scan the public tools in `docs/TOOL-CATALOG.md` (clone into `~/Projects/light-web-corpus/`); add an SDK-version column there as they're scanned | **waiting on Will:** building them runs third-party build scripts on his machine |
+| ⬜ | 5. Room 3 in place of the hand-written database: researched, not started. Plan below. Most-needed item in the coverage list (light-training, light-amp, the authenticator example) | Will: go ahead, timing ours |
+| ⬜ | Unit tests for the pure-logic stand-ins (URI, inflate, the SAX parser, URLEncoder, `%x`), expected values taken from the JVM | suggested before more stand-ins |
+| ⬜ | Next stand-ins by the coverage list: SDK permissions (`checkPermission`, `rememberPermissionRequestLauncher`, 3 tools), `LightQrCodeScanner` (3), SDK audio (2), Ktor (2; it has a wasm build) | after Room 3 |
+| ⬜ | Network without freezing the page (downloads block it: ~0.5 s per 700 KB) | not started; no plan yet |
+| ⏸ | 6. light-amp: rejected by the SDK policy (its light-sdk submodule is at an untagged commit) until it moves to a release. Still open after that: demo library or proxy, and its local stream proxy | blocked on light-amp |
 | ⏸ | Hosting a public build, and a GitHub remote | deferred by Will: develop first |
 | ⬜ | 7. Longer term: if Light's SDK moved to multiplatform libraries, most of `src/compat` goes | outside our control |
 
@@ -376,5 +379,8 @@ stand-in").
 - **Room 3:** answered (2026-10-11): go ahead, timing ours.
 - **Network for a hosted build:** a proxy (a small worker, which costs a service and abuse
   limits), or tools limited to sites that allow cross-origin requests?
-- **light-amp:** demo library, or a proxy server?
+- **Catalog scan:** may light-web clone and build the public tools in `TOOL-CATALOG.md`? Building
+  runs each repo's Gradle scripts on this machine. All of them, a chosen few, or none?
+- **light-amp:** move its light-sdk submodule to v0.2.0 so light-web takes it? Then: demo library,
+  or a proxy server?
 - **Hosting and a GitHub remote:** deferred until development is further along.
