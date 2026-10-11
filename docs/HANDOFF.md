@@ -101,11 +101,16 @@ transaction) survived a reload. On a clean origin: first run seeds (muscle group
 `COLLATE NOCASE`), strength session with an exercise and a set, Running with a duration, newest
 first on the list, the exercise in-use guard, deleting an unused exercise, deleting a session
 (through its confirmation), all surviving reloads. A second tab on the same origin can't open the
-databases (below). Room 3's exported schema is identical to the tool's `11.json`.
+databases (below). Room 3's exported schema is identical to the tool's `11.json`. Then, against
+light-training's `main` with the seeding fix: the imported sessions' export files (what LightOS
+would back up) were written by `syncExports()` through Room, with muscle-group names resolved,
+logged sets only, and epoch-millis timestamps exact; switching to LB and MI after data existed
+converts (102.5 kg → 226.0 lb, 5.25 km → 3.26 mi), with one tool-side quirk (below).
 
 **Never verified:** light-reader's search, Add a Catalogue, removing a book, its crash
-diagnostics log after a real crash, a book over a few MB. Interval Training and Interval Schemes (both "Coming soon" in the tool),
-the training backup import, unit changes after data exists (distance unit on a cardio session).
+diagnostics log after a real crash, a book over a few MB. Interval Training and Interval Schemes (both "Coming soon" in the tool).
+(There's no training backup *import* to verify: `TrainingBackupSource` only answers LightOS's
+backup questions from the export files, and nothing restores from them yet.)
 
 ## Decisions so far, and why
 
@@ -364,17 +369,20 @@ stand-in").
 
 ## Found in tools (not light-web's to fix)
 
-- **light-training: `ensureSeeded()` raced itself; fixed in light-training** (`8105fd0` on its
-  `fix/seed-race` branch, not yet merged). Screens call it concurrently (HomeScreen's
+- **light-training: the session list keeps the old distance unit** after it's changed in
+  Settings, until the tool reopens. `HomeViewModel` reads `DISTANCE_UNIT` once in `init`
+  (`dataStore.data.first()`); `onScreenShow` reloads sessions but not the unit. Same on the phone.
+  Fix: collect the preference as a flow, or re-read it in `onScreenShow`.
+
+- **light-training: `ensureSeeded()` raced itself; fixed in light-training** (merged to its
+  `main` as `4f15ffd`, #8). Screens call it concurrently (HomeScreen's
   `reloadSessions()` runs from both `init` and `onScreenShow`); each counted rows, saw none, and
   inserted the defaults, whose ids are fixed (`tabata`, ...), so the second insert failed a UNIQUE
   constraint and the tool stopped. The hand-written database hid it; under Room 3 it crashed on
   the first open after an import (presets empty, the rest not). On the LP3 (2026-10-11), fresh
   starts from cleared data: without the fix 5 of 5 crashed, leaving defaults half seeded (6–11
   muscle groups, no exercises), which the "seed only empty tables" rule then never completes;
-  with it, 0 of 5. **light-web
-  builds from `../light-training`'s working tree, so until the fix is on light-training's `main`,
-  that checkout must be on `fix/seed-race`**, or Training crashes in the browser again.
+  with it, 0 of 5.
 
 - **light-training: system back leaves a whole screen from its inner modes.** "Manage
   exercises", "Add set", the delete confirmations, and Settings' Muscle Groups/Exercises
@@ -391,8 +399,6 @@ stand-in").
 ## Open questions for Will
 
 - **Room 3:** done (2026-10-11); one tab per origin is enough.
-- **light-training `fix/seed-race`:** push and merge it? Until it's on `main`, light-web needs that
-  checkout on the branch (see "Found in tools").
 - **Network for a hosted build:** a proxy (a small worker, which costs a service and abuse
   limits), or tools limited to sites that allow cross-origin requests?
 - **Catalog scan:** may light-web clone and build the public tools in `TOOL-CATALOG.md`? Building
