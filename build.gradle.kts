@@ -492,6 +492,15 @@ tasks.named("compileKotlinWasmJs") {
     }
 }
 
+// The production build's optimizer (Binaryen) is up to date whenever the .wasm is, but it also
+// passes on the JS glue beside it, where every `js("...")` body lives. A change only inside one
+// (Net.kt's XMLHttpRequest code, say) leaves the .wasm the same, so the old glue would ship.
+// Making the whole compiled output an input reruns it on any change.
+tasks.matching { it.name == "compileProductionExecutableKotlinWasmJsOptimize" }.configureEach {
+    inputs.dir(layout.buildDirectory.dir("compileSync/wasmJs/main/productionExecutable/kotlin"))
+        .withPropertyName("lightwebGlue")
+}
+
 dependencies {
     add("kspWasmJs", "androidx.room3:room3-compiler:3.0.3")
 }

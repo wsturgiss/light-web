@@ -183,8 +183,25 @@ backup questions from the export files, and nothing restores from them yet.)
   only Gutenberg's browsing worked. The proxy also hands redirects back unfollowed, reports
   connection failures by kind (DNS, refused, certificate, TLS, timeout) as the exceptions the tool
   catches, and sends the tool's User-Agent, so light-reader's own redirect and error handling runs
-  as on the phone. It listens on 127.0.0.1 only. Local development only: **how a hosted build
-  reaches the network is still open** (the same question as light-amp's).
+  as on the phone. Local use only: **how a hosted build reaches the network is still open**
+  (the same question as light-amp's).
+- **The local proxy is for one person on one machine** (Will, 2026-10-11: personal use, local
+  for now). Listening on 127.0.0.1 keeps other machines out but not other *websites* open in the
+  same browser, which can send requests to localhost. So: `/proxy` wants an `X-Lightweb-Proxy`
+  header (another origin can send it only after a preflight, which the server never grants);
+  requests marked `Sec-Fetch-Site` other than same-origin are refused; any `Host` but localhost
+  is refused (DNS rebinding); destinations on private, loopback and link-local addresses are
+  refused, judged in the connection's own DNS lookup so a name can't resolve differently between
+  check and connect, unless named with `--allow-host` (a LAN music server for light-amp, say);
+  the site's CORS headers and cookies aren't passed back. No allowlist of sites: with only
+  light-web's pages able to use it there's little for one to stop, and it would break
+  light-reader's "Add a Catalogue", which takes any URL. A hosted proxy needs one, plus rate and
+  size limits. Checked (2026-10-11): curl against each rule (every private form: literal, `::1`,
+  IPv4-mapped, decimal, `localhost`, a public name resolving to 127.0.0.1, 169.254.169.254); a page
+  on another origin trying four ways (no-cors fetch, CORS fetch, fetch with the header, an
+  `<img>`), none got a fetch made; light-reader end to end (Standard Ebooks' feed, Gutenberg's
+  Popular, Alice downloaded through its 302 and read). The explainer of all this, with diagrams
+  and the hosting scenarios, is an artifact: https://claude.ai/artifact/NpMGi9dRQN5o5vSNNinrDG
 - **Platform types get exact `!!` rewrites.** Java's `String!` can be used as nullable or not,
   and light-reader does both with the same call. Stand-ins keep Java's real nullability, and
   the three non-null uses get the `!!` the JVM applies implicitly (see `rewrites`).
@@ -338,6 +355,11 @@ plus each tool's assets, plus 0.58 MB of SQLite when a tool opens a database.
 - A crash reloads the whole page, so a tool's in-memory state (and any other open tool's) goes
   with it, as a process death would on Android. Saved data survives.
 - Only one browser tab per origin can use the databases (see "Room 3"); by design.
+- The production build's Binaryen optimizer only tracked the `.wasm`, so a change made only
+  inside a `js("...")` body (which lives in the JS glue beside it) never reached
+  `build/dist`: the old glue was passed on. `build.gradle.kts` now makes the compiled output
+  folder an input of `compileProductionExecutableKotlinWasmJsOptimize`. If a change seems not to
+  ship anyway, grep `build/dist/.../lightweb.js` for it.
 - Adding an npm dependency changes `kotlin-js-store/wasm/yarn.lock`; the build then stops until
   `./gradlew kotlinWasmUpgradeYarnLock` is run and the lock committed.
 - Production stacks have no function names. For a readable one, build

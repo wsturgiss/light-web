@@ -158,6 +158,7 @@ private fun probeProxy(): Boolean = js(
         try {
             const x = new XMLHttpRequest();
             x.open('GET', '/proxy?probe', false);
+            x.setRequestHeader('X-Lightweb-Proxy', '1');
             x.send();
             return x.getResponseHeader('X-Lightweb-Proxy') === '1';
         } catch (e) {
@@ -171,6 +172,8 @@ private fun xhrGet(url: String, viaProxy: Boolean, userAgent: String): JsAny = j
         const x = new XMLHttpRequest();
         x.open('GET', viaProxy ? '/proxy?url=' + encodeURIComponent(url) : url, false);
         x.overrideMimeType('text/plain; charset=x-user-defined');
+        // The proxy answers only requests carrying this: other sites can't send it (see tool/serve.mjs).
+        if (viaProxy) x.setRequestHeader('X-Lightweb-Proxy', '1');
         if (viaProxy && userAgent) x.setRequestHeader('X-Proxy-User-Agent', userAgent);
         try {
             x.send();

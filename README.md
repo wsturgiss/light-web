@@ -15,13 +15,16 @@ checked out at `../light-keyboard`, tag `v0.0.19`).
 export JAVA_HOME=/home/will/.jdks/jbr-21.0.11
 ./gradlew wasmJsBrowserDevelopmentRun        # dev server with reload, http://localhost:8080
 ./gradlew wasmJsBrowserDistribution          # static site in build/dist/wasmJs/productionExecutable
-node tool/serve.mjs                          # serves it at http://127.0.0.1:8765, with the network proxy
+node tool/serve.mjs                          # serves it at http://localhost:8765, with the network proxy
 ```
 
 The production build is a plain folder of static files: serve it from anywhere. Served by
 `tool/serve.mjs`, tools reach any site through its proxy; served anywhere else, only sites that
 allow cross-origin requests. `serve.mjs` takes the folder and port to serve
-(`node tool/serve.mjs build/dist/wasmJs/developmentExecutable 8767` for readable stacks). It needs a browser with WasmGC: Chrome/Edge 119+, Firefox 120+,
+(`node tool/serve.mjs build/dist/wasmJs/developmentExecutable 8767` for readable stacks), and
+`--allow-host <name>` for a machine on your own network a tool should reach (see below).
+`serve.mjs` is for one person on one machine: open light-web at `localhost`, as it refuses any
+other host name. It needs a browser with WasmGC: Chrome/Edge 119+, Firefox 120+,
 Safari 18.2+.
 
 In the page: click to tap, drag to scroll a list or spin a number wheel (in LP3 emulator
@@ -81,7 +84,10 @@ Room needs, and KSP writes the `actual` into `wasmJsMain`.
   blocking call and a page has no thread to block: the page waits for the response (about half a
   second for a 700 KB book). Served by `tool/serve.mjs`, requests go through its local `/proxy`,
   so sites that don't allow cross-origin requests work, redirects and failures reach the tool as
-  on the phone, and the tool's User-Agent is sent. Served any other way, requests go straight to
+  on the phone, and the tool's User-Agent is sent. The proxy serves only light-web's own pages
+  (it wants an `X-Lightweb-Proxy` header, which other sites open in the browser can't send, and
+  answers only at `localhost`), and won't fetch from private addresses (your router, NAS, other
+  local servers) unless the host is named with `--allow-host`. Served any other way, requests go straight to
   the site and only work where the site allows it (Gutenberg's feeds do; its downloads and
   Standard Ebooks don't).
 - **Room databases are Room 3**, Room's multiplatform line, over SQLite's own wasm build. The
@@ -137,8 +143,9 @@ in a click, or in a coroutine.
 
 ## Not yet
 
-- **A hosted build's network.** `tool/serve.mjs`'s proxy is local only; a public build would need
-  one somewhere (a small worker) or tools limited to sites that allow cross-origin requests.
+- **A hosted build's network.** `tool/serve.mjs`'s proxy is for local use only; a public build
+  would need one somewhere (a small worker, with an allowlist of sites and rate limits) or tools
+  limited to sites that allow cross-origin requests.
 - **light-amp:** its local stream proxy needs sockets, and music servers are often plain http.
 - **More of the SDK client:** `LightWork`, audio, push, NFC, file sharing. Neither tool uses them.
 - **Tools on older SDKs.** By policy they're rejected, not built (latest release only).

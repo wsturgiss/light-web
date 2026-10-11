@@ -1,24 +1,54 @@
-// Serves light-web's build for development, with a proxy so tools can reach the network.
+// Serves light-web's build for local use, with a proxy so tools can reach the network.
 //
-//   node tool/serve.mjs [dir] [port]    (default: build/dist/wasmJs/productionExecutable, 8765)
+//   node tool/serve.mjs [dir] [port] [--allow-host <name>]...
+//     dir    default: build/dist/wasmJs/productionExecutable
+//     port   default: 8765
+//     --allow-host  a host the proxy may reach although it's on a private network (a music
+//                   server on the LAN, say): a name or an address, exactly as tools use it.
 //
 // Static files are served with no-cache, so a rebuild is what the next reload gets.
 //
-// GET /proxy?url=<https URL> fetches the URL from here and hands it back to the page, which is
+// GET /proxy?url=<http(s) URL> fetches the URL from here and hands it back to the page, which is
 // what lets a tool reach sites that don't allow cross-origin requests (see java.net's stand-in,
 // src/compat/java/net/Net.kt). It answers 200 whatever the site said, with the site's status in
 // X-Proxy-Status, and doesn't follow redirects: the tool sees them and follows them itself, as
-// on the phone. A failure to connect comes back as X-Proxy-Error: dns, refused, cert, tls,
-// timeout or unreachable. X-Proxy-User-Agent becomes the request's User-Agent, which a page can't
-// set itself.
+// on the phone, each hop through here again. A failure comes back as X-Proxy-Error: dns, refused,
+// cert, tls, timeout, blocked or unreachable. X-Proxy-User-Agent becomes the request's
+// User-Agent, which a page can't set itself.
 //
-// Listens on 127.0.0.1 only: a proxy reachable from the network would fetch anything for anyone.
+// For one person on one machine. What keeps the proxy theirs:
+// - It listens on 127.0.0.1, so other machines can't connect.
+// - Only light-web's own pages can use it. Other sites open in the same browser can send
+//   requests to localhost too, so /proxy wants an X-Lightweb-Proxy header, which a browser lets
+//   another origin send only after asking (a preflight), and this server never says yes. Requests
+//   the browser marks cross-site are refused outright.
+// - Any Host but localhost is refused, so a site can't point its own name at 127.0.0.1 (DNS
+//   rebinding) and become "same origin" with the proxy.
+// - It won't fetch from private, loopback or link-local addresses (your router, NAS, other local
+//   servers), judged by the address a name resolves to when connecting, not by the URL. Hosts
+//   named with --allow-host are let through.
+// - It passes back no cookies and none of the site's CORS headers.
+// Hosting it anywhere else needs more: an allowlist of sites, rate and size limits. See the
+// handoff's "Network" notes.
 import { createServer } from "node:http";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { BlockList, isIP } from "node:net";
+import { lookup as dnsLookup } from "node:dns";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
-const root = resolve(process.argv[2] ?? "build/dist/wasmJs/productionExecutable");
-const port = Number(process.argv[3] ?? 8765);
+const args = process.argv.slice(2);
+const positional = [];
+const allowedHosts = new Set();
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--allow-host") allowedHosts.add(hostKey(args[++i] ?? ""));
+  else positional.push(args[i]);
+}
+const root = resolve(positional[0] ?? "build/dist/wasmJs/productionExecutable");
+const port = Number(positional[1] ?? 8765);
+const localHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
 
 const types = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript",
@@ -27,42 +57,133 @@ const types = {
   ".ttf": "font/ttf", ".otf": "font/otf", ".xml": "application/xml", ".txt": "text/plain; charset=utf-8",
 };
 
-// Not passed back: the body is re-sent whole and already decompressed.
-const dropped = new Set(["content-encoding", "content-length", "transfer-encoding", "connection", "keep-alive", "set-cookie"]);
+// Not passed back. The body is re-sent whole and already decompressed; cookies stay out of the
+// page; and a site's CORS headers must never make a proxied answer readable to another origin.
+const dropped = /^(content-encoding|content-length|transfer-encoding|connection|keep-alive|set-cookie|access-control-.*)$/i;
+
+const TIMEOUT_MS = 30_000;
+const MAX_BYTES = 256 * 1024 * 1024;
+
+// Addresses the proxy won't connect to: everything that isn't the public internet.
+const privateAddresses = new BlockList();
+for (const [net, bits] of [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
+  ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 4], ["240.0.0.0", 4],
+]) privateAddresses.addSubnet(net, bits, "ipv4");
+for (const [net, bits] of [["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8]]) {
+  privateAddresses.addSubnet(net, bits, "ipv6");
+}
+
+function isPrivate(address) {
+  // An IPv4 address written as IPv6 (::ffff:127.0.0.1) is judged as the IPv4 one.
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (mapped) address = mapped[1];
+  const family = isIP(address);
+  return family === 0 || privateAddresses.check(address, family === 4 ? "ipv4" : "ipv6");
+}
+
+/** A URL's hostname as --allow-host is compared with it: lower case, no IPv6 brackets. */
+function hostKey(host) {
+  return host.toLowerCase().replace(/^\[(.*)\]$/, "$1");
+}
+
+class Blocked extends Error {
+  code = "LIGHTWEB_BLOCKED";
+}
+
+/**
+ * dns.lookup for outgoing connections, refusing a name that resolves to a private address.
+ * Checked here, where the connection gets its address, so a name can't resolve one way when
+ * checked and another when connected.
+ */
+function publicLookup(hostname, options, callback) {
+  dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
+    if (err) return callback(err);
+    const bad = addresses.find((a) => isPrivate(a.address));
+    if (bad) return callback(new Blocked(`${hostname} is ${bad.address}, a private address`));
+    if (options.all) callback(null, addresses);
+    else callback(null, addresses[0].address, addresses[0].family);
+  });
+}
 
 function failureKind(e) {
   if (e.name === "TimeoutError" || e.name === "AbortError") return "timeout";
   const code = e.cause?.code ?? e.code ?? "";
+  if (code === "LIGHTWEB_BLOCKED") return "blocked";
   if (code === "ENOTFOUND" || code === "EAI_AGAIN") return "dns";
   if (code === "ECONNREFUSED" || code === "ECONNRESET" || code === "EHOSTUNREACH" || code === "ENETUNREACH") return "refused";
   if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY|ALTNAME/.test(code)) return "cert";
   if (/SSL|TLS|EPROTO/.test(code)) return "tls";
-  if (code === "UND_ERR_CONNECT_TIMEOUT") return "timeout";
   return "unreachable";
 }
 
-async function proxy(req, res, url) {
-  if (url.searchParams.has("probe")) {
-    res.writeHead(204, { "X-Lightweb-Proxy": "1" }).end();
-    return;
+/** One GET, no redirects followed, the body decompressed. Resolves to { status, headers, body }. */
+function get(target, headers) {
+  const url = new URL(target);
+  const host = hostKey(url.hostname);
+  const allowed = allowedHosts.has(host);
+  // An address in the URL is never looked up, so it's checked here instead.
+  if (!allowed && isIP(host) && isPrivate(host)) {
+    return Promise.reject(new Blocked(`${host} is a private address`));
   }
+  const send = url.protocol === "https:" ? httpsRequest : httpRequest;
+  return new Promise((done, fail) => {
+    const req = send(url, {
+      headers: { ...headers, "Accept-Encoding": "gzip, deflate, br" },
+      lookup: allowed ? undefined : publicLookup,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    }, (res) => {
+      const encoding = (res.headers["content-encoding"] ?? "").toLowerCase();
+      const stream = encoding === "gzip" ? res.pipe(createGunzip())
+        : encoding === "deflate" ? res.pipe(createInflate())
+        : encoding === "br" ? res.pipe(createBrotliDecompress())
+        : res;
+      const chunks = [];
+      let size = 0;
+      stream.on("data", (c) => {
+        size += c.length;
+        if (size > MAX_BYTES) stream.destroy(new Error(`larger than ${MAX_BYTES >> 20} MB`));
+        else chunks.push(c);
+      });
+      stream.on("end", () => done({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      stream.on("error", fail);
+      res.on("error", fail);
+    });
+    req.on("error", fail);
+    req.end();
+  });
+}
+
+/** Why a request for /proxy isn't from one of light-web's own pages, or null if it is. */
+function foreign(req) {
+  if (req.headers["x-lightweb-proxy"] !== "1") return "missing X-Lightweb-Proxy";
+  const site = req.headers["sec-fetch-site"];
+  if (site && site !== "same-origin") return `Sec-Fetch-Site: ${site}`;
+  return null;
+}
+
+async function proxy(req, res, url) {
+  const why = foreign(req);
+  if (why) {
+    console.log(`proxy refused (${why}): ${req.headers.origin ?? req.headers.referer ?? "no origin"}`);
+    return res.writeHead(403).end("light-web's proxy is for light-web's own pages");
+  }
+  if (url.searchParams.has("probe")) return res.writeHead(204, { "X-Lightweb-Proxy": "1" }).end();
   const target = url.searchParams.get("url") ?? "";
   if (!/^https?:\/\//i.test(target)) {
-    res.writeHead(400, { "X-Proxy-Error": "unreachable" }).end("only http(s) URLs");
-    return;
+    return res.writeHead(400, { "X-Proxy-Error": "unreachable" }).end("only http(s) URLs");
   }
   const headers = { Accept: "*/*" };
   if (req.headers["x-proxy-user-agent"]) headers["User-Agent"] = req.headers["x-proxy-user-agent"];
   try {
-    const r = await fetch(target, { redirect: "manual", headers, signal: AbortSignal.timeout(30_000) });
-    const body = Buffer.from(await r.arrayBuffer());
+    const r = await get(target, headers);
     const out = { "X-Proxy-Status": String(r.status), "Cache-Control": "no-store" };
-    for (const [k, v] of r.headers) if (!dropped.has(k)) out[k] = v;
-    console.log(`proxy ${r.status} ${target} (${body.length} bytes)`);
-    res.writeHead(200, out).end(body);
+    for (const [k, v] of Object.entries(r.headers)) if (!dropped.test(k)) out[k] = v;
+    console.log(`proxy ${r.status} ${target} (${r.body.length} bytes)`);
+    res.writeHead(200, out).end(r.body);
   } catch (e) {
     const kind = failureKind(e);
-    console.log(`proxy ${kind} ${target}: ${e.cause?.code ?? e.message}`);
+    console.log(`proxy ${kind} ${target}: ${e.cause?.code ?? e.code ?? ""} ${e.message}`);
     res.writeHead(502, { "X-Proxy-Error": kind }).end(String(e.cause?.message ?? e.message));
   }
 }
@@ -80,8 +201,15 @@ async function file(res, pathname) {
 }
 
 createServer((req, res) => {
+  if (!localHosts.has((req.headers.host ?? "").toLowerCase())) {
+    console.log(`refused Host: ${req.headers.host}`);
+    return res.writeHead(403).end("light-web answers only at localhost");
+  }
   const url = new URL(req.url, "http://localhost");
   if (req.method !== "GET" && req.method !== "HEAD") return res.writeHead(405).end();
   if (url.pathname === "/proxy") return proxy(req, res, url);
   return file(res, url.pathname);
-}).listen(port, "127.0.0.1", () => console.log(`light-web: http://127.0.0.1:${port}/ (serving ${root})`));
+}).listen(port, "127.0.0.1", () => {
+  console.log(`light-web: http://localhost:${port}/ (serving ${root})`);
+  if (allowedHosts.size) console.log(`proxy may also reach: ${[...allowedHosts].join(", ")}`);
+});
