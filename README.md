@@ -70,7 +70,7 @@ src/tools    per-tool web code: light-training's database, the crash test tool â
 - **Room databases are the one thing written per tool.** Room has no wasm build, so a tool's
   database is a hand-written implementation of its own DAO interfaces over JSON tables
   (`src/tools/training/WebTrainingDatabase.kt`), marked `@WebDatabase(TrainingDatabase::class)`. It has
-  to track the tool's schema by hand. Room 3 (alpha) does have a wasm build over SQLite; if more
+  to track the tool's schema by hand. Room 3 (stable since 3.0) has a wasm build over SQLite; if more
   tools need a database, that's the way to stop writing these.
 - **Files replaced on the web** (excluded from the sync, rewritten in `src/sdk`):
   the SDK's `LightHapticFeedback` (`navigator.vibrate`) and `LightQrCodeScanner` (not
