@@ -369,7 +369,10 @@ stand-in").
   `reloadSessions()` runs from both `init` and `onScreenShow`); each counted rows, saw none, and
   inserted the defaults, whose ids are fixed (`tabata`, ...), so the second insert failed a UNIQUE
   constraint and the tool stopped. The hand-written database hid it; under Room 3 it crashed on
-  the first open after an import (presets empty, the rest not). Latent on the phone too. **light-web
+  the first open after an import (presets empty, the rest not). On the LP3 (2026-10-11), fresh
+  starts from cleared data: without the fix 5 of 5 crashed, leaving defaults half seeded (6–11
+  muscle groups, no exercises), which the "seed only empty tables" rule then never completes;
+  with it, 0 of 5. **light-web
   builds from `../light-training`'s working tree, so until the fix is on light-training's `main`,
   that checkout must be on `fix/seed-race`**, or Training crashes in the browser again.
 
