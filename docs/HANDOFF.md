@@ -55,7 +55,7 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | ✅ | Onboarding log (`docs/TOOL-ONBOARDING.md`) and `tool/unresolved-names.mjs` | `6f48e3f` |
 | ✅ | API scanner (`tool/api-scan`), checked against light-reader; coverage target in `docs/API-COVERAGE.md` | `ff99220` |
 | ⬜ | Scan the public tools in `docs/TOOL-CATALOG.md` (clone into `~/Projects/light-web-corpus/`); add an SDK-version column there as they're scanned | **waiting on Will:** building them runs third-party build scripts on his machine |
-| ✅ | 5. Room 3 in place of the hand-written database: the tool's own DAOs on SQLite (wasm, OPFS, in a worker); old JSON data imported. See "Room 3" below | `HASH` |
+| ✅ | 5. Room 3 in place of the hand-written database: the tool's own DAOs on SQLite (wasm, OPFS, in a worker); old JSON data imported. See "Room 3" below | `4e5c73e` |
 | ⬜ | Unit tests for the pure-logic stand-ins (URI, inflate, the SAX parser, URLEncoder, `%x`), expected values taken from the JVM | suggested before more stand-ins |
 | ⬜ | Next stand-ins by the coverage list: SDK permissions (`checkPermission`, `rememberPermissionRequestLauncher`, 3 tools), `LightQrCodeScanner` (3), SDK audio (2), Ktor (2; it has a wasm build) | after Room 3 |
 | ⬜ | Network without freezing the page (downloads block it: ~0.5 s per 700 KB) | not started; no plan yet |
