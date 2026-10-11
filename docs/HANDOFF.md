@@ -44,7 +44,7 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | `a276a96` | light-dnd runs in the browser. Shell, tool host, Android stand-ins, asset loading. |
 | `f78a3a2` | Light's real LP3 keyboard (lightphone/light-keyboard v0.0.19), compiled unchanged. Mode switch. |
 | `d00f511` | light-training runs. Room/DataStore/java.time/UUID/SHA-256 stand-ins; LightScreen + view models; hand-written database. Esc and back fixes. |
-| (next) | Crash isolation: a tool's uncaught exception reloads the page to the home screen with "<tool> stopped". `?crashtest` lists a tool that throws on purpose. |
+| `b38dc53` | Crash isolation: a tool's uncaught exception reloads the page to the home screen with "<tool> stopped". `?crashtest` lists a tool that throws on purpose. |
 
 Verified by hand in Chrome (no automated tests): dnd home, dice roll, rules search, save
 survives reload; LP3 keyboard tapping + computer keys + Backspace/Return; computer mode;
