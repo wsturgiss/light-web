@@ -7,7 +7,7 @@ import kotlin.math.round
 
 /**
  * `java.lang` statics that Android code uses unqualified. A tool package aliases these as
- * `Math` / `System` (see src/tools/dnd/JvmBuiltins*.kt), since java.lang's default imports
+ * `Math` / `System` (see src/templates/JvmBuiltins.kt.template), since java.lang's default imports
  * don't exist off the JVM.
  */
 object JvmMath {

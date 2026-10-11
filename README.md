@@ -40,9 +40,13 @@ D-pad and volume keys. Below the screen:
 src/compat   stand-ins for the android.* / java.* / androidx Android-only APIs ─────┤
 src/sdk      the SDK's client side, for the web (screens, host, assets) ────────────┼─> one Kotlin/Wasm
 src/shell    LightOS's part: the screen, the tool list, launching ─────────────────┤    module
-src/tools    per-tool registration and JVM-name shims ─────────────────────────────┘
+src/tools    per-tool registration (and light-training's database) ────────────────┘
 ```
 
+- **JVM names used without an import** (`Math`, `"%d".format`, `Foo::class.java`,
+  `Dispatchers.IO`) resolve off the JVM only if declared in the package itself, so the build
+  writes `src/templates/JvmBuiltins.kt.template` into every upstream package. A name the package
+  declares itself is left out. A tool needing another such name: add it to the template.
 - **Upstream code isn't edited.** `build.gradle.kts` syncs it into `build/generated/lightweb/upstream`
   and compiles it there. Where a stand-in can't reach, `rewrites` makes a few exact text edits
   to the copy, and the build fails if one stops matching. Today: the SDK's keyboard-backed
@@ -81,10 +85,8 @@ src/tools    per-tool registration and JVM-name shims ────────�
    today), so its vendored SDK must match.
 2. Register it in `src/tools/<tool>/` (a `LightTool` naming its initial screen and entry point,
    which on Android KSP finds), and list it in `src/shell/lightweb/shell/Tools.kt`.
-3. Copy a `JvmBuiltins*.kt` from `src/tools/training` into each of its packages: JVM names used
-   without an import (`Math`, `"%d".format`, `Foo::class.java`, `Dispatchers.IO`).
-4. If it uses Room, write its database (see `WebTrainingDatabase.kt`).
-5. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
+3. If it uses Room, write its database (see `WebTrainingDatabase.kt`).
+4. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
    `src/compat` under the real Android/Java names.
 
 ## When a tool throws

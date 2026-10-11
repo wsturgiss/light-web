@@ -2,7 +2,7 @@ package lightweb.compat
 
 /**
  * The code-point helpers Java has on String, StringBuilder and Character, which Kotlin/Wasm's
- * stdlib keeps internal. Packages that use them unqualified alias these (JvmBuiltins.kt files).
+ * stdlib keeps internal. Packages that use them unqualified alias these (src/templates/JvmBuiltins.kt.template).
  */
 object JvmCharacter {
     fun charCount(codePoint: Int): Int = if (codePoint >= 0x10000) 2 else 1

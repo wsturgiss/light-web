@@ -194,6 +194,66 @@ val generateResources by tasks.registering(GenerateResources::class) {
     outputDir.set(generated.map { it.dir("kotlin") })
 }
 
+/**
+ * Writes src/templates/JvmBuiltins.kt.template into every package the upstream sources declare:
+ * the JVM names (`Math`, `"%d".format`, `Foo::class.java`, `Dispatchers.IO`...) that Android code
+ * uses unqualified, which off the JVM resolve only if declared in the package itself.
+ *
+ * The template is blank-line-separated blocks, one declaration each. A block is left out of a
+ * package that declares the same name itself (light-dnd's model has its own `Character`), where
+ * the two would clash; and out of a package that star-imports one declaring it, where ours would
+ * quietly win (a package's own names beat star imports).
+ */
+abstract class GenerateJvmBuiltins : DefaultTask() {
+    @get:InputDirectory abstract val upstreamDir: DirectoryProperty
+    /** Our own sources, which can declare top-level names into upstream packages too. */
+    @get:InputFiles abstract val ownSources: ConfigurableFileCollection
+    @get:InputFile abstract val template: RegularFileProperty
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        val packageLine = Regex("""^package\s+([\w.]+)""", RegexOption.MULTILINE)
+        // An unindented declaration's name: `class Character`, `fun String.format(`,
+        // `val <T : Any> KClass<T>.java`.
+        val declaration = Regex(
+            """^(?:(?:internal|private|public|data|sealed|enum|abstract|open|inline|annotation|value|const)\s+)*""" +
+                """(?:class|object|interface|typealias|fun|val|var)\s+(?:<.*?>\s+)?(?:[\w<>?, *]+\.)?(\w+)""",
+            RegexOption.MULTILINE,
+        )
+        val starImport = Regex("""^import\s+([\w.]+)\.\*""", RegexOption.MULTILINE)
+        class Source(val pkg: String, val declares: Set<String>, val starImports: Set<String>)
+        fun scan(files: Sequence<File>) = files.filter { it.isFile && it.extension == "kt" }.mapNotNull { f ->
+            val text = f.readText()
+            val pkg = packageLine.find(text)?.groupValues?.get(1) ?: return@mapNotNull null
+            Source(pkg, declaration.findAll(text).map { it.groupValues[1] }.toSet(), starImport.findAll(text).map { it.groupValues[1] }.toSet())
+        }
+        val upstream = scan(upstreamDir.get().asFile.walkTopDown()).toList()
+        val byPackage = (upstream + scan(ownSources.asFileTree.files.asSequence())).groupBy { it.pkg }
+        val declared = byPackage.mapValues { (_, s) -> s.flatMap { it.declares }.toSet() }
+        val starImported = byPackage.mapValues { (_, s) -> s.flatMap { it.starImports }.toSet() }
+
+        val text = template.get().asFile.readText()
+        check("__PACKAGE__" in text) { "JvmBuiltins.kt.template has lost its __PACKAGE__ placeholder" }
+        val blocks = text.split(Regex("""\n\s*\n""")).map { block -> block to declaration.find(block)?.groupValues?.get(1) }
+        for (pkg in upstream.map { it.pkg }.toSortedSet()) {
+            val own = (starImported[pkg].orEmpty() + pkg).flatMap { declared[it].orEmpty() }.toSet()
+            val kept = blocks.filter { (_, name) -> name == null || name !in own }.joinToString("\n\n") { it.first }
+            out.resolve(pkg.replace('.', '/')).apply { mkdirs() }
+                .resolve("JvmBuiltins.kt").writeText(kept.replace("__PACKAGE__", pkg).trimEnd() + "\n")
+        }
+    }
+}
+
+val generateJvmBuiltins by tasks.registering(GenerateJvmBuiltins::class) {
+    upstreamDir.set(layout.dir(syncUpstreamSources.map { it.destinationDir }))
+    template.set(file("src/templates/JvmBuiltins.kt.template"))
+    ownSources.from("src/compat", "src/sdk", "src/shell", "src/tools")
+    outputDir.set(generated.map { it.dir("builtins") })
+}
+
 kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
@@ -214,6 +274,7 @@ kotlin {
             kotlin.srcDir("src/tools")
             kotlin.srcDir(syncUpstreamSources)
             kotlin.srcDir(generateResources)
+            kotlin.srcDir(generateJvmBuiltins)
             resources.srcDir("src/web")
             resources.srcDir(syncWebAssets)
 
