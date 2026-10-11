@@ -44,8 +44,13 @@ tools= in gradle.properties          ┐
 src/compat   stand-ins for the android.* / java.* / androidx Android-only APIs ─────┤
 src/sdk      the SDK's client side, for the web (screens, host, assets) ────────────┼─> one Kotlin/Wasm
 src/shell    LightOS's part: the screen, the tool list, launching ─────────────────┤    module
-src/tools    per-tool web code: light-training's database, the crash test tool ────┘
+src/tools    per-tool web code: the crash test tool ───────────────────────────────┘
 ```
+
+Room's KSP processor runs over the lot and adds each tool's database code. All of it is
+`commonMain` in Gradle, though wasm is the only target, because Kotlin won't take an `expect`
+and its `actual` in one source set: the tool declares (through `toRoom3`) the `expect object`
+Room needs, and KSP writes the `actual` into `wasmJsMain`.
 
 - **JVM names used without an import** (`Math`, `"%d".format`, `Foo::class.java`,
   `Dispatchers.IO`) resolve off the JVM only if declared in the package itself, so the build
@@ -55,7 +60,8 @@ src/tools    per-tool web code: light-training's database, the crash test tool �
   and compiles it there. Where a stand-in can't reach, `rewrites` makes a few exact text edits
   to the copy, and the build fails if one stops matching. Today: the SDK's keyboard-backed
   `LightTextInputEditor` is renamed `LightTextInputEditorLp3` (so the web one can choose by
-  mode), and `LightIcons.allEntries`, which upstream builds with JVM reflection, becomes a list.
+  mode), `LightIcons.allEntries`, which upstream builds with JVM reflection, becomes a list, and
+  light-training's `ensureSeeded` gets a lock (a race; see the handoff's "Found in tools").
 - **Android APIs a tool imports are provided under their Android names** (`src/compat`):
   `android.util.Log`, `android.view.KeyEvent`, `java.io.File`, `BitmapFactory`, `LocalContext`,
   `LocalConfiguration`, `painterResource(R.drawable.x)`, `Font(R.font.x)` and so on. Each does
@@ -79,11 +85,17 @@ src/tools    per-tool web code: light-training's database, the crash test tool �
   on the phone, and the tool's User-Agent is sent. Served any other way, requests go straight to
   the site and only work where the site allows it (Gutenberg's feeds do; its downloads and
   Standard Ebooks don't).
-- **Room databases are the one thing written per tool.** Room has no wasm build, so a tool's
-  database is a hand-written implementation of its own DAO interfaces over JSON tables
-  (`src/tools/training/WebTrainingDatabase.kt`), marked `@WebDatabase(TrainingDatabase::class)`. It has
-  to track the tool's schema by hand. Room 3 (stable since 3.0) has a wasm build over SQLite; if more
-  tools need a database, that's the way to stop writing these.
+- **Room databases are Room 3**, Room's multiplatform line, over SQLite's own wasm build. The
+  tool's DAOs, SQL and schema are its own: Room's KSP processor generates the database code from
+  them, as on Android, and its exported schema (`assets/schemas`) drives auto-migrations. The
+  tools are written for Room 2, so the build translates their sources (`toRoom3`: the
+  `androidx.room3` package, `@Relation`'s array parameters, and the `@ConstructedBy` Room needs
+  off Android). SQL runs in a web worker (`src/web/sqlite-worker.js`, androidx.sqlite's
+  `WebWorkerSQLiteDriver` protocol) on files in the origin-private file system, so it works from
+  static hosting with no special headers. SQLite (about 580 KB gzipped) is fetched when a tool
+  first opens a database. Only `suspend` and `Flow` DAO functions work: the browser has no
+  blocking SQLite. One tab per origin can hold the databases at a time. Rows saved by earlier
+  light-web versions (JSON in localStorage) are imported on first open.
 - **Files replaced on the web** (excluded from the sync, rewritten in `src/sdk`):
   the SDK's `LightHapticFeedback` (`navigator.vibrate`) and `LightQrCodeScanner` (not
   supported), the keyboard's `HardwareKeyboardInput` (browser key events instead of Android
@@ -104,12 +116,11 @@ src/tools    per-tool web code: light-training's database, the crash test tool �
    from its `@EntryPoint` and `@InitialScreen` classes, as KSP finds them on Android. Every tool
    builds against one SDK, a light-sdk checkout at the latest release (`lightSdk.dir`), and the
    build rejects a tool on any other version before compiling (`tool/sdk-version.mjs`).
-   Record the tool's first compile in `docs/TOOL-ONBOARDING.md` before adding stand-ins.
-2. If it uses Room, write its database in `src/tools/<pack>/`, marked `@WebDatabase(Foo::class)`
-   (see `WebTrainingDatabase.kt`).
-3. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
+   Record the tool's first compile in `docs/TOOL-ONBOARDING.md` before adding stand-ins. A Room
+   database needs nothing more, as long as its DAO functions are all `suspend` or `Flow`.
+2. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
    `src/compat` under the real Android/Java names.
-4. Java's platform types are the one thing a stand-in can't match: on the JVM `uri.host` is
+3. Java's platform types are the one thing a stand-in can't match: on the JVM `uri.host` is
    `String!`, usable as nullable or non-null. Stand-ins keep Java's real nullability, so a tool
    that uses one as non-null gets an exact `!!` rewrite in `rewrites` (see light-reader's).
 

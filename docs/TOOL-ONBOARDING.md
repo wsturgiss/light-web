@@ -53,6 +53,10 @@ first ones are fixed, and gaps that compile but behave wrongly, show up later (s
 - **Already covered by light-dnd:** `Log`, `File`, `Date`, `DateFormat`, `Locale`, the SDK screens.
 - **Decisions:** Room databases hand-written per tool, for now (Room had no wasm build then; Room 3
   does now, and Will has said go ahead).
+- **Later (2026-10-11, Room 3):** the hand-written database went; the tool's own DAOs run on Room 3
+  over SQLite. Needed: the Room 2 → 3 source translation (`toRoom3`: package, `@Relation`'s
+  `parentColumns`/`entityColumns`, `@ConstructedBy`), and a lock on `ensureSeeded` (a race the
+  JSON tables hid; see the handoff). Room 3's exported schema matched the tool's `11.json`.
 
 ## light-reader
 

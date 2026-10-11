@@ -220,7 +220,9 @@ const INLINE_ARTIFACTS = new Set(["kotlin/io/CloseableKt.closeFinally", "kotlin/
 // Libraries light-web builds with, in their web form; their Android-only files are still checked.
 // The Light SDK isn't one of them: light-web reimplements its client (src/sdk), so references into
 // it are checked against that like any other.
-const SUPPLIED = /^(androidx\/compose\/|kotlinx\/coroutines\/|kotlinx\/serialization\/|androidx\/lifecycle\/|androidx\/datastore\/|androidx\/annotation\/|androidx\/collection\/|org\/jetbrains\/annotations\/|org\/intellij\/lang\/annotations\/|okio\/|kotlinx\/datetime\/|co\/touchlab\/kermit\/)/;
+// Room is Room 3 on the web (toRoom3 in build.gradle.kts), and so is the androidx.sqlite under it,
+// except SupportSQLite (androidx.sqlite.db), which Room 3 dropped.
+const SUPPLIED = /^(androidx\/room\/|androidx\/sqlite\/(?!db\/)|androidx\/compose\/|kotlinx\/coroutines\/|kotlinx\/serialization\/|androidx\/lifecycle\/|androidx\/datastore\/|androidx\/annotation\/|androidx\/collection\/|org\/jetbrains\/annotations\/|org\/intellij\/lang\/annotations\/|okio\/|kotlinx\/datetime\/|co\/touchlab\/kermit\/)/;
 
 // ---------------------------------------------------------------------------------------------
 // Building and reading a tool.
@@ -460,13 +462,8 @@ for (const moduleDir of tools) {
     const found = new Map(); // missing name -> Set of classes using it
     for (const ref of refs) {
       if (ownClasses.has(ref.owner) || ownClasses.has(ref.owner.replace(/\$.*/, ""))) continue;
-      // Room's generated database code (KSP, *_Impl) is replaced whole on the web: one need, not
-      // one per class it calls.
-      if (/_Impl(\$|$)/.test(ref.from) && /^androidx\/(room|sqlite)\//.test(ref.owner)) {
-        const n = "androidx/room (the database code Room generates: needs a web database)";
-        (found.get(n) ?? found.set(n, new Set()).get(n)).add(ref.from);
-        continue;
-      }
+      // Room's generated database code (KSP, *_Impl): Room 3's processor writes it anew for the web.
+      if (/_Impl(\$|$)/.test(ref.from) && /^androidx\/(room|sqlite)\//.test(ref.owner)) continue;
       let m = missing(ref);
       if (!m) continue;
       // A library light-web doesn't supply is one need, whatever the tool calls in it.
@@ -495,7 +492,7 @@ for (const moduleDir of tools) {
 function libraryOf(name) {
   const parts = name.split(/[/.]/);
   if (/^(java|javax|android|kotlin|org\/xml|org\/w3c|dalvik)$/.test(parts[0]) || name.startsWith("org/xml/") || name.startsWith("org/w3c/") || name.startsWith("com/thelightphone/")) return null;
-  if (parts[0] === "androidx" && /^(room|sqlite)$/.test(parts[1])) return null; // reported as Room above
+  if (parts[0] === "androidx" && parts[1] === "sqlite") return null; // SupportSQLite, by name
   if (SUPPLIED.test(name)) return null; // an Android-only part of a supplied library
   // io.ktor, androidx.media3, okhttp3...; com.google.x and the like by their third segment.
   const pkg = parts.slice(0, Math.max(1, parts.findIndex((p) => /^[A-Z]/.test(p)) === -1 ? parts.length - 1 : parts.findIndex((p) => /^[A-Z]/.test(p))));

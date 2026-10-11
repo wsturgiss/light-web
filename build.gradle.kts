@@ -5,6 +5,7 @@ plugins {
     kotlin("plugin.compose") version "2.3.20"
     kotlin("plugin.serialization") version "2.3.20"
     id("org.jetbrains.compose") version "1.12.1"
+    id("com.google.devtools.ksp") version "2.3.12"
 }
 
 // The SDK every tool compiles against: a light-sdk checkout at its latest release tag, the
@@ -61,6 +62,15 @@ val rewrites = mapOf(
     "reader/com/yarosz/reader/Epub.kt" to listOf(
         "spine += attrs.getValue(\"idref\") to" to "spine += attrs.getValue(\"idref\")!! to",
     ),
+    // A race in light-training, which the hand-written database hid (its DAOs never really
+    // suspended): screens call ensureSeeded() concurrently, both count zero rows, and both insert
+    // the same fixed ids. Under Room every query suspends, so the second insert fails (UNIQUE
+    // constraint, interval_presets.id) and the tool stops. The phone's Room is asynchronous too.
+    // Serialised here until light-training locks it itself (see docs/HANDOFF.md, "Found in tools").
+    "training/com/thelightphone/training/model/TrainingRepository.kt" to listOf(
+        "    suspend fun ensureSeeded() {\n" to "    suspend fun ensureSeeded() = seedLock.withLock {\n",
+        "    private val exportsSyncLock = Mutex()\n" to "    private val exportsSyncLock = Mutex()\n\n    private val seedLock = Mutex() // light-web\n",
+    ),
     // The SDK's text editor with the embedded LP3 keyboard becomes LightTextInputEditorLp3; the
     // public LightTextInputEditor (src/sdk) picks it or a plain text field by DeviceMode.
     "ui/com/thelightphone/sdk/ui/LightTextInputEditor.kt" to listOf(
@@ -70,6 +80,31 @@ val rewrites = mapOf(
             "override fun <T : ViewModel> create(modelClass: kotlin.reflect.KClass<T>, extras: androidx.lifecycle.viewmodel.CreationExtras): T {",
     ),
 )
+
+/**
+ * A tool's Room 2 source, rewritten for Room 3: Room's multiplatform line, the one with a wasm
+ * build. Its API is Room 2's under a new package, apart from what's translated here:
+ *
+ * - imports: `androidx.room.` -> `androidx.room3.`. Every use must be an import; a fully
+ *   qualified one fails the build rather than resolving to nothing.
+ * - `@Relation(parentColumn = "a", entityColumn = "b")` takes arrays: `parentColumns = ["a"]`.
+ * - A `@Database` class needs `@ConstructedBy` and an `expect object` off Android, which Room's
+ *   KSP processor fills in with the `actual`; both are added here.
+ */
+fun toRoom3(source: String, path: String): String {
+    var src = source.replace(Regex("""(?m)^import androidx\.room\."""), "import androidx.room3.")
+    check("androidx.room." !in src) { "$path names androidx.room outside an import; extend toRoom3 in build.gradle.kts" }
+    src = src.replace(Regex("""\b(parent|entity)Column\s*=\s*("(?:[^"\\]|\\.)*")""")) { "${it.groupValues[1]}Columns = [${it.groupValues[2]}]" }
+    if (Regex("""(?m)^@Database\b""").containsMatchIn(src) && "@ConstructedBy" !in src) {
+        val db = Regex("""(?m)^((?:(?:public|internal)\s+)?)abstract class (\w+)\s*:\s*RoomDatabase\(\)""").findAll(src).toList()
+        check(db.size == 1) { "$path: toRoom3 expects one `abstract class X : RoomDatabase()` beside @Database; found ${db.size}" }
+        val (visibility, name) = db[0].destructured
+        src = src.replaceRange(db[0].range, "@androidx.room3.ConstructedBy(${name}Constructor::class)\n${db[0].value}") +
+            "\n// light-web: Room's KSP processor writes the actual.\n" +
+            "${visibility}expect object ${name}Constructor : androidx.room3.RoomDatabaseConstructor<$name>\n"
+    }
+    return src
+}
 
 /**
  * Upstream sources, compiled as they are. What's excluded here is replaced by a web version
@@ -96,6 +131,12 @@ val syncUpstreamSources by tasks.registering(Sync::class) {
     into(generated.map { it.dir("upstream") })
 
     doLast {
+        // The tools are on Room 2; the browser build compiles them against Room 3 (see toRoom3).
+        for (p in toolPacks) destinationDir.resolve(p.name).walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { f ->
+            val src = f.readText()
+            if ("androidx.room." in src) f.writeText(toRoom3(src, f.relativeTo(destinationDir).path))
+        }
+
         for ((path, edits) in rewrites) {
             val f = destinationDir.resolve(path)
             var src = f.readText()
@@ -130,6 +171,22 @@ val checkSdkVersions by tasks.registering(Exec::class) {
     val script = file("tool/sdk-version.mjs")
     inputs.file(script)
     commandLine(listOf("node", script.path, "--sdk", lightSdk.path, "--require-latest", "--check-sdk-checkout") + toolPacks.map { it.tool!!.path })
+}
+
+/** Every tool's exported Room schemas (`assets/schemas/<database class>/<version>.json`), in one place for KSP. */
+val syncRoomSchemas by tasks.registering(Sync::class) {
+    for (p in toolPacks) p.assets?.resolve("schemas")?.let { from(it) }
+    into(generated.map { it.dir("room-schemas") })
+}
+
+/** SQLite's wasm build, from the npm package, to `sqlite/` beside the page (see sqlite-worker.js). */
+val syncSqliteWasm by tasks.registering(Sync::class) {
+    dependsOn("kotlinWasmNpmInstall")
+    from(layout.buildDirectory.dir("wasm/node_modules/@sqlite.org/sqlite-wasm/dist")) {
+        include("index.mjs", "sqlite3.wasm")
+        into("sqlite")
+    }
+    into(generated.map { it.dir("sqlite-web") })
 }
 
 /** Copies every pack's files to where the page serves them from. */
@@ -300,13 +357,12 @@ val generateJvmBuiltins by tasks.registering(GenerateJvmBuiltins::class) {
  * Writes `lightweb.generated.generatedTools`: a LightTool per tool pack, from what Android's SDK
  * build reads too. The id and label come from `lighttool.toml`; the entry point and first screen
  * are the classes marked @EntryPoint and @InitialScreen in the tool's sources (KSP finds them on
- * Android); its Room databases are the classes marked @WebDatabase under src/tools/<pack>.
+ * Android).
  */
 abstract class GenerateToolRegistry : DefaultTask() {
     @get:Input abstract val packNames: ListProperty<String>
     @get:InputFiles abstract val manifests: ConfigurableFileCollection
     @get:InputDirectory abstract val upstreamDir: DirectoryProperty
-    @get:InputDirectory abstract val ownToolsDir: DirectoryProperty
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
 
     private class Found(val file: File, val pkg: String, val name: String)
@@ -342,18 +398,6 @@ abstract class GenerateToolRegistry : DefaultTask() {
             val screen = screens.singleOrNull()
                 ?: error("$pack needs exactly one @InitialScreen class; found ${screens.map { it.qualified() }}")
             check(entryPoints.size <= 1) { "$pack has more than one @EntryPoint: ${entryPoints.map { it.qualified() }}" }
-            val databases = find(ownToolsDir.get().asFile.resolve(pack), "WebDatabase").map { (impl, args) ->
-                // The database class as the annotation names it, resolved through the file's imports.
-                val of = Regex("""\(\s*(?:of\s*=\s*)?([\w.]+)::class\s*\)""").find(args)?.groupValues?.get(1)
-                    ?: error("${impl.file}: @WebDatabase needs the database class, as @WebDatabase(Foo::class)")
-                val imported = Regex("""^import\s+([\w.]+\.$of)\s*$""", RegexOption.MULTILINE).find(impl.file.readText())?.groupValues?.get(1)
-                val dbClass = when {
-                    '.' in of -> of
-                    imported != null -> imported
-                    else -> "${impl.pkg}.$of"
-                }
-                "$dbClass::class to { name -> ${impl.qualified()}(name) }"
-            }
             buildString {
                 appendLine("    LightTool(")
                 appendLine("        id = ${kotlinString(tomlString(toml, "id"))},")
@@ -361,7 +405,6 @@ abstract class GenerateToolRegistry : DefaultTask() {
                 appendLine("        assetPack = ${kotlinString(pack)},")
                 appendLine("        entryPoint = ${entryPoints.singleOrNull()?.qualified() ?: "null"},")
                 appendLine("        initialScreen = { ${screen.qualified()}(it) },")
-                if (databases.isNotEmpty()) appendLine("        databases = mapOf(${databases.joinToString()}),")
                 appendLine("    ),")
             }
         }
@@ -385,7 +428,6 @@ val generateToolRegistry by tasks.registering(GenerateToolRegistry::class) {
     packNames.set(toolPacks.map { it.name })
     manifests.from(toolPacks.map { it.tool!!.resolve("lighttool.toml") })
     upstreamDir.set(layout.dir(syncUpstreamSources.map { it.destinationDir }))
-    ownToolsDir.set(file("src/tools"))
     outputDir.set(generated.map { it.dir("registry") })
 }
 
@@ -402,7 +444,10 @@ kotlin {
     }
 
     sourceSets {
-        wasmJsMain {
+        // Everything is in commonMain, though there's one target: Kotlin won't take an expect and
+        // its actual in one source set, and Room's KSP processor writes the actuals (see toRoom3)
+        // into wasmJsMain. With wasmJs as its only target, commonMain compiles as wasm code.
+        commonMain {
             kotlin.srcDir("src/compat")
             kotlin.srcDir("src/sdk")
             kotlin.srcDir("src/shell")
@@ -413,6 +458,7 @@ kotlin {
             kotlin.srcDir(generateToolRegistry)
             resources.srcDir("src/web")
             resources.srcDir(syncWebAssets)
+            resources.srcDir(syncSqliteWasm)
 
             dependencies {
                 implementation(compose.runtime)
@@ -429,6 +475,11 @@ kotlin {
                 // The version Compose Material 3 already brings in.
                 implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1")
                 implementation("co.touchlab:kermit:2.2.0")
+                implementation("androidx.room3:room3-runtime:3.0.3")
+                implementation("androidx.sqlite:sqlite-web:2.7.1")
+                // SQLite's own wasm build, for src/web/sqlite-worker.js. Not bundled: syncSqliteWasm
+                // serves its files next to the page, and the worker loads them when a tool opens a database.
+                implementation(npm("@sqlite.org/sqlite-wasm", "3.53.4-build2"))
             }
         }
     }
@@ -448,4 +499,16 @@ tasks.named("compileKotlinWasmJs") {
     doFirst {
         delete(layout.buildDirectory.dir("classes/kotlin/wasmJs/main"), layout.buildDirectory.dir("kotlin/compileKotlinWasmJs"))
     }
+}
+
+dependencies {
+    add("kspWasmJs", "androidx.room3:room3-compiler:3.0.3")
+}
+
+tasks.matching { it.name == "kspKotlinWasmJs" }.configureEach { dependsOn(syncRoomSchemas) }
+
+ksp {
+    // Room reads earlier schema versions from here for auto-migrations, and writes the current
+    // one: a copy, so it never writes into a tool's checkout.
+    arg("room.schemaLocation", syncRoomSchemas.get().destinationDir.path)
 }

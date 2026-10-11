@@ -1,22 +1,17 @@
 package com.thelightphone.sdk
 
-import androidx.room.RoomDatabase
+import androidx.room3.Room
+import androidx.room3.RoomDatabase
 import kotlin.reflect.KClass
 
 /**
- * The SDK's `buildDatabase`. Room has no wasm target, so there's nothing to build from the
- * class: the tool's registration (LightTool.databases, from @WebDatabase) supplies a hand-written web
- * implementation, and this hands it out, one per name, for the life of the page.
+ * The SDK's `buildDatabase`, on Room 3: the tool's own DAOs and SQL, run by Room's generated code
+ * against SQLite in the browser (see lightweb.openWebDatabase). Reified because Room's web
+ * builder is; tools call it with `Foo::class.java`, which is the KClass here.
  */
-fun <T : RoomDatabase> SealedLightContext.buildDatabase(dbClass: KClass<T>, dbName: String?): T {
-    val tool = host.tool
-    val key = "${tool.id}/${dbName ?: dbClass.simpleName}"
-    @Suppress("UNCHECKED_CAST")
-    return openDatabases.getOrPut(key) {
-        val factory = tool.databases[dbClass]
-            ?: error("${tool.name} has no web implementation of ${dbClass.simpleName}; write one in src/tools/${tool.assetPack} marked @WebDatabase")
-        factory(dbName ?: dbClass.simpleName ?: "db")
-    } as T
-}
+inline fun <reified T : RoomDatabase> SealedLightContext.buildDatabase(dbClass: KClass<T>, dbName: String?): T =
+    openDatabase(dbName ?: dbClass.simpleName ?: "db") { Room.databaseBuilder<T>(it) }
 
-private val openDatabases = HashMap<String, RoomDatabase>()
+@PublishedApi
+internal fun <T : RoomDatabase> SealedLightContext.openDatabase(name: String, builder: (fileName: String) -> RoomDatabase.Builder<T>): T =
+    lightweb.openWebDatabase(host.tool.id, name, builder)

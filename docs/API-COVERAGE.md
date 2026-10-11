@@ -4,7 +4,8 @@ What the known tools use that light-web doesn't provide yet, from their Android 
 API scanner (`tool/api-scan/scan.mjs`). This is the list of stand-ins to write, ranked by how many
 tools need each. Regenerate it when light-web or the corpus changes.
 
-Scanned 2026-10-11 against light-web `6f48e3f` plus the scanner commit:
+Scanned 2026-10-11 against light-web `6f48e3f` plus the scanner commit; rescanned the same day
+with Room 3 in (`--no-build`), which took Room off the list and changed nothing else:
 
 ```bash
 node tool/api-scan/scan.mjs --json corpus.json ../light-dnd/tool ../light-training/tool \
@@ -16,7 +17,9 @@ node tool/api-scan/scan.mjs --json corpus.json ../light-dnd/tool ../light-traini
   isn't a release (see the handoff's SDK policy). The public tools in `TOOL-CATALOG.md` are next.
 - **Reading it:** a name is a class, a member (`Class.member`) or a package-level function. A
   library light-web doesn't supply counts once, as the library, however much of it a tool calls.
-  Room's generated database code counts once, as "needs a web database". light-dnd, light-reader
+  Room counts as supplied (it's Room 3 on the web), apart from SupportSQLite (`androidx.sqlite.db`),
+  which Room 3 dropped. What the scanner can't see: a DAO function that blocks (not `suspend`, not
+  `Flow`) won't build on the web. The authenticator's all block; light-amp's don't. light-dnd, light-reader
   and the weather example's 0 or 1 is the scanner agreeing with reality: they run, or (weather)
   need only Ktor.
 - **How good is it?** Checked against light-reader's real first compile: it found 45 of the 48
@@ -30,17 +33,13 @@ node tool/api-scan/scan.mjs --json corpus.json ../light-dnd/tool ../light-traini
 
 | Tool | Missing names |
 |---|---|
-## By tool
-
-| Tool | Missing names |
-|---|---|
 | light-dnd | 0 |
-| light-training | 1 |
+| light-training | 0 |
 | light-reader | 0 |
-| light-amp-fork | 108 |
+| light-amp-fork | 107 |
 | example: ui-demo | 7 |
 | example: weather | 1 |
-| example: authenticator | 19 |
+| example: authenticator | 18 |
 | example: audio-demo | 32 |
 | example: tool-manager-demo | 11 |
 
@@ -48,7 +47,6 @@ node tool/api-scan/scan.mjs --json corpus.json ../light-dnd/tool ../light-traini
 
 | Tools | Name | Used by |
 |---|---|---|
-| 3 | `androidx.room (the database code Room generates: needs a web database)` | light-training, light-amp-fork, authenticator |
 | 3 | `com.thelightphone.sdk.checkPermission` | light-amp-fork, ui-demo, audio-demo |
 | 3 | `com.thelightphone.sdk.LightQrCodeScanner` | light-amp-fork, ui-demo, authenticator |
 | 3 | `com.thelightphone.sdk.rememberPermissionRequestLauncher` | light-amp-fork, ui-demo, audio-demo |
@@ -82,7 +80,6 @@ node tool/api-scan/scan.mjs --json corpus.json ../light-dnd/tool ../light-traini
 - **android.util** (1): `LruCache` (light-amp-fork)
 - **android.view** (1): `KeyEvent.keyCodeToString` (ui-demo)
 - **androidx.media3** (1): `androidx.media3 (library: light-web doesn't supply it)` (light-amp-fork)
-- **androidx.room** (1): `androidx.room (the database code Room generates: needs a web database)` (light-training, light-amp-fork, authenticator)
 - **com.thelightphone.sdk** (14): `checkPermission` (light-amp-fork, ui-demo, audio-demo); `LightQrCodeScanner` (light-amp-fork, ui-demo, authenticator); `rememberPermissionRequestLauncher` (light-amp-fork, ui-demo, audio-demo); `PermissionRequestLauncher` (light-amp-fork, ui-demo, audio-demo); `LightJobResult` (light-amp-fork, tool-manager-demo); `LightJobResult$Success` (light-amp-fork, tool-manager-demo); `callRemoteServiceMethod` (ui-demo); `hasRuntimePermission` (light-amp-fork); `refreshKeyboardOptions` (light-amp-fork); `LightFileShare` (tool-manager-demo); `LightFileShare$LightFile` (tool-manager-demo); `LightWork` (light-amp-fork); `SealedLightContext.getFileShare` (tool-manager-demo); `SimpleLightScreen.onKeyDown` (light-amp-fork)
 - **com.thelightphone.sdk.audio** (24): `DefaultLightAudio` (light-amp-fork, audio-demo); `LightAudio` (light-amp-fork, audio-demo); `LightAudioItem` (light-amp-fork, audio-demo); `LightAudioPlayback` (light-amp-fork, audio-demo); `LightAudioPlayer` (light-amp-fork, audio-demo); `LightAudioSource` (light-amp-fork, audio-demo); `LightAudioSource$FileSource` (light-amp-fork, audio-demo); `LightAudioSource$UrlSource` (light-amp-fork, audio-demo); `LightAudioUsage` (light-amp-fork, audio-demo); `LightMediaMetadata` (light-amp-fork, audio-demo); `AudioCapabilities` (audio-demo); `CaptureConfig` (audio-demo); `LightAudioCapture` (audio-demo); `LightAudioError` (audio-demo); `LightAudioErrorKind` (audio-demo); `LightAudioException` (audio-demo); `LightAudioNetworkBlockedException` (light-amp-fork); `LightAudioNetworkPolicy` (light-amp-fork); `LightAudioPlayerAvailability` (light-amp-fork); `LightAudioRecorder` (audio-demo); `LightAudioSource$AssetSource` (audio-demo); `LightAudioVoice` (audio-demo); `MicSource` (audio-demo); `RecorderConfig` (audio-demo)
 - **com.thelightphone.sdk.cast** (4): `DlnaCast` (light-amp-fork); `DlnaPosition` (light-amp-fork); `DlnaRenderer` (light-amp-fork); `DlnaState` (light-amp-fork)
