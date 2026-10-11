@@ -53,7 +53,8 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | ✅ | light-reader runs, unchanged: files on IndexedDB, zip, SAX, `java.net` + dev proxy, connectivity | `8e69d4f` |
 | ✅ | SDK from a light-sdk checkout at its latest tag; tools on other versions rejected before compiling | this commit |
 | ✅ | Onboarding log (`docs/TOOL-ONBOARDING.md`) and `tool/unresolved-names.mjs` | this commit |
-| ⬜ | API scanner: a tool's outside API use from its Android build, diffed against light-web's stand-ins | next |
+| ✅ | API scanner (`tool/api-scan`), checked against light-reader; coverage target in `docs/API-COVERAGE.md` | this commit |
+| ⬜ | Scan the public tools in `docs/TOOL-CATALOG.md` (clone into `~/Projects/light-web-corpus/`) | next |
 | ⬜ | 5. Room 3 in place of the hand-written database: researched, not started. Plan below | Will: go ahead, timing ours |
 | ⬜ | 6. light-amp: needs a decision on approach (demo library or proxy server) | not started |
 | ⏸ | Hosting a public build, and a GitHub remote | deferred by Will: develop first |
@@ -290,6 +291,9 @@ Checked against the published artifacts and light-training's source:
 - `tool/serve.mjs`: dev server, static files plus the network proxy. `tool/drive.mjs`: drives
   headless Chromium. `tool/sdk-version.mjs`: which light-sdk release a tool is on.
   `tool/unresolved-names.mjs`: distinct missing names from a compile log.
+- `tool/api-scan/scan.mjs`: the API scanner (usage and limits at its top);
+  `classpath.init.gradle` prints a tool's runtime classpath for it.
+- `docs/API-COVERAGE.md`: the scanner's output over the corpus, ranked: the stand-ins to write.
 - `docs/TOOL-ONBOARDING.md`: what each tool needed when added. `docs/TOOL-CATALOG.md`: known
   Light tools, the test set for the scanner.
 - `src/sdk`: the SDK client rewritten for the web: `LightToolHost` (replaces LightActivity:
@@ -333,6 +337,25 @@ assets.
 - No unit tests yet for the new pure-logic stand-ins (URI, inflate, the XML parser, URLEncoder,
   `%x`). They're checked only by light-reader running. One bug already slipped through and was
   caught by running: URI's fields were shifted by one.
+
+## The API scanner (2026-10-11)
+
+Reads a tool's Android build (its own Gradle; writes only to its git-ignored `build/`) and lists
+every reference light-web doesn't provide, at member level, before light-web compiles anything.
+Bytecode isn't source, so it filters what the compiler writes rather than the tool:
+`java.lang` intrinsics (`toInt()` is `Integer.parseInt`), `java.util.Arrays` (`copyOf`), bridges
+to interface default methods (`invokespecial` of an interface method), stdlib `@PublishedApi`
+helpers that inline functions call (`closeFinally`, `createListBuilder`), synthetic members
+(`copy`, `values`, `$stable`), name mangling (`-0d7_KjU`, `$default`, `getFD` → `fd`), Room's
+generated `*_Impl` code (one "needs a database" line). Libraries light-web supplies (Compose,
+kotlinx, lifecycle, DataStore) count as provided except their `*_androidKt` files; the Light SDK
+is checked like any other API, since light-web reimplements its client. Checked: light-reader
+before its stand-ins, 45 of 48 compile names found, 1 false positive; light-dnd, light-reader
+now: 0; light-training: only Room. Known misses: Kotlin-only annotations, overloads that resolve
+differently on the web, Java platform types, a tool's own explicit `java.util.Arrays`.
+
+Follow-up, not built: the same diff as a lint rule for tool authors ("this call has no web
+stand-in").
 
 ## Found in tools (not light-web's to fix)
 

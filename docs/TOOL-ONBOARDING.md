@@ -9,13 +9,15 @@ makes an error at every line that uses it (light-reader: 310 errors, 48 names).
 Before writing any stand-in:
 
 1. `node tool/sdk-version.mjs <tool module>`: it must be on the latest light-sdk release, or
-   light-web doesn't take it (see the handoff). Record a rejection here and stop.
-2. Add the module to `tools=` in `gradle.properties` and compile, keeping the log:
+   light-web doesn't take it (see the handoff). Record a rejection here and stop building (the
+   scanner can still run, for planning).
+2. `node tool/api-scan/scan.mjs <tool module>`: the scanner's prediction, from the tool's
+   Android build. Record its count and names.
+3. Add the module to `tools=` in `gradle.properties` and compile, keeping the log:
    `./gradlew compileKotlinWasmJs > first-compile.log 2>&1`.
-3. `node tool/unresolved-names.mjs first-compile.log <pack>` and record its counts and names
-   below, with which were new and which earlier tools had already brought in.
-4. Once the API scanner exists: record its prediction next to the compile's names, and what it
-   missed or flagged wrongly.
+4. `node tool/unresolved-names.mjs first-compile.log <pack>` and record its counts and names
+   below, with which were new and which earlier tools had already brought in, and what the
+   scanner missed or flagged wrongly.
 5. Afterwards, add what only running the tool found (compile-clean gaps) and anything that needed
    a decision rather than code.
 
@@ -82,6 +84,17 @@ The 48, by area (all new stand-ins):
 
 Also from the 7 other errors: `String(CharArray, …)` and `String(ByteArray, …, Charset)`
 (deprecated as errors off the JVM), `listFiles(FileFilter)`, `readText(Charset)`.
+
+**The scanner's prediction** (run afterwards, against light-web at `ab472d2`, before these
+stand-ins; it didn't exist yet): 59 names. Of the compile's 48 it found **45**. It missed three:
+`@JvmInline` (a Kotlin annotation, not in bytecode as a reference), `String.format(Locale, …)`
+(the template already had `format`; only the overload was wrong, which no compile showed either)
+and `java.util.Arrays` (ignored on purpose: Kotlin's own `copyOf` compiles to it). Of its other
+14, 13 are things the stand-ins really needed that the compile reported only as members or not
+at all (`FileDescriptor`, `XMLReader`, `SAXParser`, `Charset`, `URLConnection`, `Reader`,
+`nameWithoutExtension`…); one is a false positive (`FileInputStream`, from an inlined
+`inputStream()`). It also missed `readText(Charset)`, an overload of a member that existed. Against
+light-web now it reports 0.
 
 **After the first compile:**
 - Second compile, 9 errors: Java **platform types**. light-reader uses `uri.host`,

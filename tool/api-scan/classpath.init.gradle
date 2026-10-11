@@ -1,0 +1,19 @@
+// Prints a module's debug runtime classpath for the API scanner: one line per artifact,
+// "LIGHTWEB-CP\t<project path>\t<group:name:version or project path>\t<jar>". AARs come as their classes jar (the Android
+// Gradle plugin's "android-classes-jar" artifact type), project dependencies as their classes.
+allprojects {
+    tasks.register("lightwebClasspath") {
+        doLast {
+            def config = project.configurations.findByName("debugRuntimeClasspath")
+            if (config == null) return
+            def type = org.gradle.api.attributes.Attribute.of("artifactType", String)
+            def view = config.incoming.artifactView {
+                attributes { attribute(type, "android-classes-jar") }
+                lenient = true
+            }
+            view.artifacts.each { a ->
+                println "LIGHTWEB-CP\t${project.path}\t${a.id.componentIdentifier.displayName}\t${a.file}"
+            }
+        }
+    }
+}
