@@ -49,8 +49,11 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | ✅ | 3. Tool registration generated from `lighttool.toml`, `@EntryPoint`, `@InitialScreen`, `@WebDatabase` | `6911746` |
 | ✅ | 4. Real libraries under the stand-ins: DataStore 1.3, kotlinx-datetime, Kermit; old preferences migrate | `e424a34` |
 | ✅ | Exercise light-training's untested screens. All worked; the one fix was mouse drags in the emulator | `892fc88` |
-| ✅ | Tools listed in `gradle.properties` (`tools=`); everything else derived from `lighttool.toml` | this commit |
-| ✅ | light-reader runs, unchanged: files on IndexedDB, zip, SAX, `java.net` + dev proxy, connectivity | this commit |
+| ✅ | Tools listed in `gradle.properties` (`tools=`); everything else derived from `lighttool.toml` | `8e69d4f` |
+| ✅ | light-reader runs, unchanged: files on IndexedDB, zip, SAX, `java.net` + dev proxy, connectivity | `8e69d4f` |
+| ✅ | SDK from a light-sdk checkout at its latest tag; tools on other versions rejected before compiling | this commit |
+| ✅ | Onboarding log (`docs/TOOL-ONBOARDING.md`) and `tool/unresolved-names.mjs` | this commit |
+| ⬜ | API scanner: a tool's outside API use from its Android build, diffed against light-web's stand-ins | next |
 | ⬜ | 5. Room 3 in place of the hand-written database: researched, not started. Plan below | Will: go ahead, timing ours |
 | ⬜ | 6. light-amp: needs a decision on approach (demo library or proxy server) | not started |
 | ⏸ | Hosting a public build, and a GitHub remote | deferred by Will: develop first |
@@ -102,7 +105,13 @@ the training backup import, unit changes after data exists (distance unit on a c
   is compiled against the latest anyway, and where that breaks it, the break is recorded as an
   SDK-version mismatch, not a missing stand-in. Worth doing: take the SDK from
   lightphone/light-sdk at the latest tag instead of from light-dnd, so light-web isn't tied to
-  one tool's checkout.
+  one tool's checkout. Done: `lightSdk.dir=../light-sdk`, a clone of lightphone/light-sdk checked
+  out at v0.2.0; `checkSdkVersions` (tool/sdk-version.mjs) fails the build if that checkout or any
+  tool isn't on the latest tag. A tool's version comes from its light-sdk submodule's tag, or its
+  vendored `sdk/` matched file by file (git blob hashes, Markdown ignored) against each release,
+  or a Maven version; one it can't place is rejected. Fetch light-sdk's tags to see a new release.
+  Rejected so far: light-amp (submodule at an untagged commit). light-herdr also fails it but is
+  unfinished and skipped.
 - **Develop first; hosting and a GitHub remote later** (Will, 2026-10-10). When a remote is
   made, start it private: that's a backup at once, and "public source?" and "public build?" stay
   separate decisions. A public build fits GitHub Pages (static files). Before anything goes
@@ -269,8 +278,8 @@ Checked against the published artifacts and light-training's source:
 
 ## Layout
 
-- `build.gradle.kts`: syncs sources from `../light-dnd` (tool + its vendored SDK `ui`/`shared`),
-  `../light-training/tool`, `../light-keyboard/ui`; applies `rewrites`; generates an Android-style
+- `build.gradle.kts`: checks SDK versions (`checkSdkVersions`); syncs sources from each module in
+  `tools=`, the SDK's `ui`/`shared` from `../light-sdk`, and `../light-keyboard/ui`; applies `rewrites`; generates an Android-style
   `R` class per resource pack and a resource table, the JVM-name shims (`generateJvmBuiltins`)
   and the tool registry (`generateToolRegistry`); copies assets to `assets/<pack>/`.
 - `src/compat`: stand-ins under real names (`android.util.Log` on Kermit, `java.io.File` on
@@ -279,7 +288,10 @@ Checked against the published artifacts and light-training's source:
   DataStore Preferences is the real androidx DataStore 1.3 (alpha), made in
   `src/sdk/lightweb/WebPreferencesDataStore.kt`.
 - `tool/serve.mjs`: dev server, static files plus the network proxy. `tool/drive.mjs`: drives
-  headless Chromium.
+  headless Chromium. `tool/sdk-version.mjs`: which light-sdk release a tool is on.
+  `tool/unresolved-names.mjs`: distinct missing names from a compile log.
+- `docs/TOOL-ONBOARDING.md`: what each tool needed when added. `docs/TOOL-CATALOG.md`: known
+  Light tools, the test set for the scanner.
 - `src/sdk`: the SDK client rewritten for the web: `LightToolHost` (replaces LightActivity:
   back stack + lifecycle), `SimpleLightScreen`/`LightScreen`, `SealedLightContext`,
   `buildDatabase`, `Assets` loader, `DeviceMode`, web keyboard input, mode-switching

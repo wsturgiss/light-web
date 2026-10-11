@@ -7,8 +7,9 @@ plugins {
     id("org.jetbrains.compose") version "1.12.1"
 }
 
-// The SDK every tool compiles against: light-dnd's vendored copy (see docs/HANDOFF.md).
-val lightDnd = file(providers.gradleProperty("lightDnd.dir").get())
+// The SDK every tool compiles against: a light-sdk checkout at its latest release tag, the
+// only SDK light-web builds tools for (see checkSdkVersions and docs/HANDOFF.md).
+val lightSdk = file(providers.gradleProperty("lightSdk.dir").get())
 val lightKeyboard = file(providers.gradleProperty("lightKeyboard.dir").get())
 val generated = layout.buildDirectory.dir("generated/lightweb")
 
@@ -23,7 +24,7 @@ val generated = layout.buildDirectory.dir("generated/lightweb")
 data class Pack(val name: String, val rPackage: String, val res: File?, val assets: File?, val tool: File? = null)
 
 val packs = listOf(
-    Pack("sdk-ui", "com.thelightphone.sdk.ui", lightDnd.resolve("sdk/ui/src/main/res"), null),
+    Pack("sdk-ui", "com.thelightphone.sdk.ui", lightSdk.resolve("sdk/ui/src/main/res"), null),
     Pack("keyboard", "com.thelightphone.lp3Keyboard.ui", lightKeyboard.resolve("ui/src/main/res"), null),
 ) + providers.gradleProperty("tools").get().split(Regex("\\s+")).filter { it.isNotEmpty() }.map { toolPack(file(it)) }
 val toolPacks = packs.filter { it.tool != null }
@@ -75,8 +76,9 @@ val rewrites = mapOf(
  * under src/ (see README.md, "How a tool gets to the browser").
  */
 val syncUpstreamSources by tasks.registering(Sync::class) {
-    from(lightDnd.resolve("sdk/shared/src/main/kotlin")) { into("shared") }
-    from(lightDnd.resolve("sdk/ui/src/main/kotlin")) {
+    dependsOn(checkSdkVersions)
+    from(lightSdk.resolve("sdk/shared/src/main/kotlin")) { into("shared") }
+    from(lightSdk.resolve("sdk/ui/src/main/kotlin")) {
         into("ui")
         exclude(
             "**/LightHapticFeedback.kt",  // Vibrator
@@ -117,6 +119,17 @@ val syncUpstreamSources by tasks.registering(Sync::class) {
                 "        listOf(\n" + names.joinToString("") { "            \"$it\" to $it,\n" } + "        )\n    }\n}\n"
         )
     }
+}
+
+/**
+ * Refuses, before anything compiles, a tool not built on the latest light-sdk release, and a
+ * light-sdk checkout not at that release: light-web builds tools against the latest release
+ * only. The check is tool/sdk-version.mjs, which the API scanner uses too.
+ */
+val checkSdkVersions by tasks.registering(Exec::class) {
+    val script = file("tool/sdk-version.mjs")
+    inputs.file(script)
+    commandLine(listOf("node", script.path, "--sdk", lightSdk.path, "--require-latest", "--check-sdk-checkout") + toolPacks.map { it.tool!!.path })
 }
 
 /** Copies every pack's files to where the page serves them from. */

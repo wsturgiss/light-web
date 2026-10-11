@@ -102,7 +102,9 @@ src/tools    per-tool web code: light-training's database, the crash test tool â
    (in the package `tool.id` names, as the SDK's Gradle plugin does) and writes its `LightTool`
    (`generateToolRegistry`): id and label from `lighttool.toml`, entry point and first screen
    from its `@EntryPoint` and `@InitialScreen` classes, as KSP finds them on Android. Every tool
-   builds against one copy of the SDK (light-dnd's today), so its vendored SDK must match.
+   builds against one SDK, a light-sdk checkout at the latest release (`lightSdk.dir`), and the
+   build rejects a tool on any other version before compiling (`tool/sdk-version.mjs`).
+   Record the tool's first compile in `docs/TOOL-ONBOARDING.md` before adding stand-ins.
 2. If it uses Room, write its database in `src/tools/<pack>/`, marked `@WebDatabase(Foo::class)`
    (see `WebTrainingDatabase.kt`).
 3. Build. Compile errors are the list of what else it uses that isn't here yet; add stand-ins to
@@ -129,7 +131,7 @@ in a click, or in a coroutine.
   one somewhere (a small worker) or tools limited to sites that allow cross-origin requests.
 - **light-amp:** its local stream proxy needs sockets, and music servers are often plain http.
 - **More of the SDK client:** `LightWork`, audio, push, NFC, file sharing. Neither tool uses them.
-- **The SDK pinned per tool.** Today every tool builds against light-dnd's vendored SDK.
+- **Tools on older SDKs.** By policy they're rejected, not built (latest release only).
 
 ## Size
 
