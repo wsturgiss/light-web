@@ -14,7 +14,12 @@ import kotlinx.coroutines.await
  * over had touched nothing, so it simply carries on starting up once the lock is its own.
  */
 object TabLock {
-    /** Takes the lock if no other tab has it. Without Web Locks (an old browser), always true. */
+    /**
+     * Takes the lock if no other tab has it. A page replacing this tab's last one (a reload, a
+     * link) asks before that one has let go, so this waits a moment for it rather than taking
+     * that for another tab. A tab taking over is already queued for the lock, so it still goes
+     * first. Without Web Locks (an old browser), always true.
+     */
     suspend fun acquire(): Boolean = acquireJs().await<JsBoolean>().toBoolean()
 
     /** Asks the tab that has the lock to let go, and returns once this tab has it. */
@@ -28,11 +33,11 @@ private fun acquireJs(): Promise<JsBoolean> = js(
     """(() => {
         if (!navigator.locks) return Promise.resolve(true);
         return new Promise((answer) => {
-            navigator.locks.request('lightweb-active', { ifAvailable: true }, (lock) => {
-                answer(lock !== null);
+            navigator.locks.request('lightweb-active', { signal: AbortSignal.timeout(1500) }, () => {
+                answer(true);
                 // Held for as long as the page lives.
-                return lock === null ? undefined : new Promise(() => {});
-            });
+                return new Promise(() => {});
+            }).catch(() => answer(false));
         });
     })()"""
 )

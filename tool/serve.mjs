@@ -261,6 +261,8 @@ async function file(res, pathname) {
     const body = await readFile(path);
     res.writeHead(200, { "Content-Type": types[extname(path)] ?? "application/octet-stream", "Cache-Control": "no-cache" }).end(body);
   } catch {
+    // A path with no file extension is a page path (/dnd, a link to one tool): the page.
+    if (!extname(pathname)) return file(res, "/");
     res.writeHead(404).end("not found");
   }
 }

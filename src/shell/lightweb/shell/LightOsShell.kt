@@ -127,6 +127,16 @@ fun LightOsShell() {
         }
     }
 
+    // On a link to one tool (see onlyTool), it opens as soon as the shell is ready.
+    var opening by remember { mutableStateOf(onlyTool) }
+    LaunchedEffect(state, opening) {
+        val tool = opening
+        if (state == ShellState.Home && tool != null) {
+            opening = null
+            open(tool)
+        }
+    }
+
     fun back() {
         when (val s = state) {
             is ShellState.Running -> s.host.back()
