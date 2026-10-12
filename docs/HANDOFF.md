@@ -59,7 +59,7 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | ⬜ | Unit tests for the pure-logic stand-ins (URI, inflate, the SAX parser, URLEncoder, `%x`), expected values taken from the JVM | suggested before more stand-ins |
 | ⬜ | Next stand-ins by the coverage list: SDK permissions (`checkPermission`, `rememberPermissionRequestLauncher`, 3 tools), `LightQrCodeScanner` (3), SDK audio (2), Ktor (2; it has a wasm build) | after Room 3 |
 | ⬜ | Network without freezing the page (downloads block it: ~0.5 s per 700 KB) | not started; no plan yet |
-| ⏸ | 6. light-amp: rejected by the SDK policy (its light-sdk submodule is at an untagged commit) until it moves to a release. Still open after that: demo library or proxy, and its local stream proxy | blocked on light-amp |
+| 🟡 | 6. light-amp (light-amp-fork): taken under the widened SDK policy; compiles (two exact rewrites) and runs: Subsonic browse and play verified against Navidrome's demo; Plex link code works, linking needs Will. See TOOL-ONBOARDING.md | branch `light-amp` |
 | ⏸ | Hosting a public build, and a GitHub remote | deferred by Will: develop first |
 | ⬜ | 7. Longer term: if Light's SDK moved to multiplatform libraries, most of `src/compat` goes | outside our control |
 

@@ -146,6 +146,27 @@ light-web now it reports 0.
   background transfers) compiles against stand-ins that fail at runtime; amp already falls back
   where they fail (`StreamProxy` tests itself and hands the player the server's own URL).
 
+**After the first compile** (2026-10-11):
+- Stand-ins compiled it in four more rounds; the last errors were JVM conveniences (`copyTo`,
+  `buffered`, `inputStream()`, `Enumeration.toList()`, `Map.remove(k, v)`), now in the template.
+- Two exact rewrites: `StreamProxy`'s access-order `LinkedHashMap` (final on Wasm) and
+  `AppSettings`' `p.remove(...)` (below).
+- Running it found, in light-web: `LocalWindowInfo.containerSize` was the browser window (amp
+  scales its layout from it; everything was ~2.8x too big); the home list didn't scroll past
+  three tools; in LP3 mode a click didn't focus the canvas, so computer keys didn't reach text
+  fields (since `MouseAsTouch`). In the stand-ins: MD5 was missing (Subsonic's login token).
+- **Kotlin/Wasm unboxes discarded generic results.** DataStore's `MutablePreferences.remove`
+  returns null for an unset key though declared `T`; on the JVM nobody looks, on Wasm a Boolean
+  key throws "Cannot cast null to kotlin.Boolean". Expect the same wherever a Java-ish library
+  returns null for a non-null `T`.
+- **What works** (headless, against Navidrome's public demo, Subsonic): adding a source, library
+  sync (50 albums, artwork), opening an album, playing (the browser streams straight from the
+  server), pause, next. Plex: the plex.tv link code is fetched and polled; linking needs Will's
+  account. Amp's loopback proxy switches itself off at start, as designed.
+- **Known:** amp's reachability ping can time out during a sync (the browser's six connections
+  per origin are busy; on the phone the ping has its own pool), so amp briefly calls the server
+  unreachable. The app's wasm grew from 1.74 to 2.39 MB gzipped.
+
 ## Rejected
 
 | Tool | Date | Reason |
