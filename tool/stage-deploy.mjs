@@ -18,6 +18,9 @@ const dirs = [
 const notices = dirs.map((d) => `== ${d.replace(/^\.\.\//, "")}\n\n${readFileSync(`${d}/LICENSE`, "utf8").trim()}\n`);
 notices.push(`== Other components (Kotlin, Compose, kotlinx, SQLite and more): see lightweb.js.LICENSE.txt\n`);
 writeFileSync(`${to}/LICENSES.txt`, notices.join("\n"));
+// Marks the page as the hosted demo, so tools can start with something to show (lightweb.DemoSeed).
+const index = `${to}/index.html`;
+writeFileSync(index, readFileSync(index, "utf8").replace("<script", "<script>globalThis.lightwebDemo = true;</script>\n    <script"));
 // Hashed wasm names never change content, so they can be cached for good.
 writeFileSync(`${to}/_headers`, "/*.wasm\n  Cache-Control: public, max-age=31536000, immutable\n");
 console.log(`staged ${to} from ${from}, with LICENSES.txt for ${dirs.length} repos`);

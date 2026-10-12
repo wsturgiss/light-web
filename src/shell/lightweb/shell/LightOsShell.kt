@@ -36,6 +36,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import com.thelightphone.sdk.LightToolHost
+import lightweb.seedForDemo
+import lightweb.tools.demoSeeds
 import lightweb.DisplayColor
 import lightweb.warmToolDataStore
 import com.thelightphone.sdk.ui.LightTheme
@@ -94,6 +96,8 @@ fun LightOsShell() {
             WebFiles.load("/data/${tool.id}")
             // And its preferences, which tools may read synchronously while starting (see toolDataStore).
             warmToolDataStore(tool.id)
+            // On the hosted demo, something to start with (see lightweb.DemoSeed).
+            seedForDemo(tool.id, demoSeeds)
             val host = LightToolHost(tool) {
                 CrashGuard.toolClosed()
                 DisplayColor.toolWantsColour.value = false
