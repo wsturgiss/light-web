@@ -112,6 +112,33 @@ diagnostics log after a real crash, a book over a few MB. Interval Training and 
 (There's no training backup *import* to verify: `TrainingBackupSource` only answers LightOS's
 backup questions from the export files, and nothing restores from them yet.)
 
+## Where light-amp stands (2026-10-12, mid-session)
+
+Branch `light-amp` (on top of `local-proxy`, on top of `room3`; none merged into `main`).
+light-amp-fork itself is untouched (branch `playlist-membership-cache` checked out).
+
+- **Works:** compiles; Subsonic end to end against Navidrome's public demo (add source, sync,
+  artwork, album, play/pause/next). Plex: link code from plex.tv, polling, server found via
+  plex.tv resources, `/library/sections` and playlists fetched through the proxy.
+- **Open bug, being chased:** with Will's Plex (192.168.200.124), amp fetched sections and
+  playlists, then stopped: no `/library/sections/<id>/all` request ever reached the proxy, and
+  no connections were left open. Likely an error on the browser side before the album request
+  (amp catches it into a sync state). Next: link a headless amp (dev build, port 8781, served
+  with `--allow-host 192.168.200.124`) to Will's Plex and read its log for the failure. Will has
+  to enter a plex.tv/link code for it (expires in minutes).
+- **Fixed late, not yet in Will's tab:** a settings write inside `runBlocking` crashed amp's
+  boot once a source was saved; tool preferences now write to memory at once and save behind
+  (`CachedDataStore`). Will's 8765 server serves the production build from before this fix:
+  rebuild (`wasmJsBrowserDistribution`) before he reloads.
+- **Known:** the reachability ping times out during a big sync (6 connections per origin);
+  Plex advertises Docker bridge addresses (172.17/18.x) that the proxy rightly blocks; app wasm
+  is 2.39 MB gzipped with amp; the whole app's code loads up front.
+- **Running on Will's machine:** `node tool/serve.mjs build/dist/wasmJs/productionExecutable
+  8765 --allow-host 192.168.200.124` (Will's, detached). For debugging: a dev server on 8781,
+  headless Chromium on CDP port 9334, and a console logger writing amp's output to the
+  session scratchpad (`amp-headless.log`). Stop them by port (`ss -ltnp`); their process name is
+  `node-MainThread`, so `pgrep -x node` misses them.
+
 ## Decisions so far, and why
 
 ### Shape of the project

@@ -21,9 +21,9 @@ import kotlinx.browser.localStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -43,20 +43,34 @@ suspend fun warmToolDataStore(toolId: String) = (toolDataStore(toolId) as Cached
 private val dataStores = HashMap<String, CachedDataStore>()
 
 /**
- * A DataStore whose [data] is its current value, held in memory: once [warm], reading it finishes
- * without waiting, as reading a loaded file does on Android. Tools rely on that: light-amp reads
- * its settings with `runBlocking { dataStore.data.first() }` while it starts, and a page can't
- * block, so the read has to be complete before it begins (see kotlinx.coroutines.runBlocking in
- * src/compat). Writes go to the real store, and the value they return is current at once.
+ * A DataStore whose [data] is its current value, held in memory, and whose writes take effect
+ * there at once and are saved behind, in order. Once [warm], neither a read nor a write waits,
+ * as a small preferences file is effectively instant on Android. Tools rely on that: light-amp
+ * reads and writes its settings inside `runBlocking` while it starts, and a page can't block, so
+ * those calls have to finish without waiting (see kotlinx.coroutines.runBlocking in src/compat).
+ *
+ * This is the store's only writer, so after the first read it doesn't follow the store back: a
+ * save completing would otherwise briefly bring back an older value than one written since.
  */
 private class CachedDataStore(private val delegate: DataStore<Preferences>) : DataStore<Preferences> {
     private val current = MutableStateFlow<Preferences?>(null)
+    private val saves = Channel<Preferences>(Channel.UNLIMITED)
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            delegate.data
-                .catch { e -> Logger.withTag("DataStore").e(e) { "Couldn't read preferences; starting empty" }; emit(emptyPreferences()) }
-                .collect { current.value = it }
+            current.value = try {
+                delegate.data.first()
+            } catch (e: Exception) {
+                Logger.withTag("DataStore").e(e) { "Couldn't read preferences; starting empty" }
+                emptyPreferences()
+            }
+            for (p in saves) {
+                try {
+                    delegate.updateData { p }
+                } catch (e: Exception) {
+                    Logger.withTag("DataStore").e(e) { "Couldn't save preferences" }
+                }
+            }
         }
     }
 
@@ -64,8 +78,12 @@ private class CachedDataStore(private val delegate: DataStore<Preferences>) : Da
 
     override val data: Flow<Preferences> = current.filterNotNull()
 
-    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
-        delegate.updateData(transform).also { current.value = it }
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+        val next = transform(current.value ?: current.filterNotNull().first())
+        current.value = next
+        saves.trySend(next)
+        return next
+    }
 }
 
 /**
