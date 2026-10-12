@@ -3,7 +3,8 @@
 //
 // Hosted, it's reachable by anyone, so it's narrower than the local one:
 // - It fetches only from the sites in ALLOWED_HOSTS: public sites the demo's tools use.
-//   Visitors' own servers are out of scope (no credentials pass through here).
+//   Visitors' own servers are out of scope; the one exception is Will's Plex server, whose token
+//   passes through here (never logged).
 // - Only light-web's own pages can use it: the same X-Lightweb-Proxy header and Sec-Fetch-Site
 //   checks as locally, and no OPTIONS answer, so other origins can't send that header.
 // - Bodies stream through (nothing buffered) with a size cap; no cookies, no CORS headers back.
@@ -14,7 +15,13 @@ const ALLOWED_HOSTS = new Set([
   "standardebooks.org",                // Reader
   "demo.navidrome.org",                // amp: the demo music server
   "lrclib.net",                        // amp: lyrics
+  "plex.tv",                           // amp: linking Plex, finding servers
 ]);
+
+// amp: Will's own Plex server, by the ID in its plex.direct names (the "*.<id>.plex.direct" its
+// certificate covers). Other people's servers stay out.
+const ALLOWED_SUFFIXES = [".b8bcfdfc1fa94089836692c05a511aad.plex.direct"];
+const allowed = (host) => ALLOWED_HOSTS.has(host) || ALLOWED_SUFFIXES.some((s) => host.endsWith(s));
 
 const MAX_BYTES = 64 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -43,7 +50,7 @@ export async function onRequest({ request }) {
     return fail(400, "unreachable", "only http(s) URLs");
   }
   if (target.protocol !== "https:" && target.protocol !== "http:") return fail(400, "unreachable", "only http(s) URLs");
-  if (!ALLOWED_HOSTS.has(target.hostname.toLowerCase())) {
+  if (!allowed(target.hostname.toLowerCase())) {
     return fail(403, "blocked", `${target.hostname} isn't one of the demo's sites; run light-web locally to reach it`);
   }
 
