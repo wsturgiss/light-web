@@ -30,6 +30,8 @@ internal class WebAudioEngine(private val assetPack: String) {
 
     private val items = mutableListOf<LightAudioItem>()
     private var loadedUrl: String? = null
+    /** Whether [loadedUrl] is playing through light-web's proxy, after the browser couldn't reach it. */
+    private var viaProxy = false
     private var objectUrl: String? = null
     /** Bumped on every load, so an answer about an earlier item is ignored. */
     private var generation = 0
@@ -214,6 +216,7 @@ internal class WebAudioEngine(private val assetPack: String) {
             return
         }
         loadedUrl = url
+        viaProxy = false
         audio.src = url
         if (startPositionMs > 0) {
             once("loadedmetadata") { if (gen == generation) audio.currentTime = startPositionMs / 1000.0 }
@@ -285,11 +288,26 @@ internal class WebAudioEngine(private val assetPack: String) {
                         PlaybackException("Couldn't reach the server", null, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
                     status != null && status >= 400 ->
                         PlaybackException("Response code: $status", null, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS)
+                    status != null && !viaProxy && WebHttp.proxied -> {
+                        // The proxy reached it where the browser couldn't (a home server's public
+                        // address seen from inside the home, say): play it through the proxy.
+                        if (gen == generation) playViaProxy(url)
+                        return@launch
+                    }
                     else -> PlaybackException("The browser can't play this format", null, PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)
                 }
                 fail(gen, e)
             }
         }
+    }
+
+    private fun playViaProxy(url: String) {
+        val position = audio.currentTime
+        viaProxy = true
+        audio.src = "/proxy?url=" + encodeUriComponent(url)
+        if (position > 0) once("loadedmetadata") { audio.currentTime = position }
+        audio.load()
+        if (playWhenReady) startPlaying()
     }
 
     private fun fail(gen: Int, e: PlaybackException) {
@@ -349,3 +367,5 @@ private fun addOnce(audio: HTMLAudioElement, type: String, handler: () -> Unit):
 private fun objectUrlFor(bytes: org.khronos.webgl.Uint8Array): String = js("URL.createObjectURL(new Blob([bytes]))")
 
 private fun revokeObjectUrl(url: String): Unit = js("URL.revokeObjectURL(url)")
+
+private fun encodeUriComponent(s: String): String = js("encodeURIComponent(s)")

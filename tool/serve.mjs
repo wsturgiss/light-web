@@ -177,6 +177,13 @@ function readBody(req) {
   });
 }
 
+/** A media element's own request, vouched for by the browser (see deploy/functions/proxy.js). */
+function isMedia(req) {
+  return (req.method === "GET" || req.method === "HEAD")
+    && req.headers["sec-fetch-site"] === "same-origin"
+    && ["audio", "video"].includes(req.headers["sec-fetch-dest"]);
+}
+
 /** Why a request for /proxy isn't from one of light-web's own pages, or null if it is. */
 function foreign(req) {
   if (req.headers["x-lightweb-proxy"] !== "1") return "missing X-Lightweb-Proxy";
@@ -186,6 +193,7 @@ function foreign(req) {
 }
 
 async function proxy(req, res, url) {
+  if (isMedia(req)) return media(req, res, url);
   const why = foreign(req);
   if (why) {
     console.log(`proxy refused (${why}): ${req.headers.origin ?? req.headers.referer ?? "no origin"}`);
@@ -214,6 +222,34 @@ async function proxy(req, res, url) {
     const kind = failureKind(e);
     console.log(`proxy ${kind} ${target}: ${e.cause?.code ?? e.code ?? ""} ${e.message}`);
     res.writeHead(502, { "X-Proxy-Error": kind }).end(String(e.cause?.message ?? e.message));
+  }
+}
+
+/**
+ * An audio or video element's request, which can't carry X-Lightweb-Proxy: its range is asked for
+ * and the site's status and range headers come back as they are, so the element can seek.
+ * Redirects are followed here, since the element can't see them through the proxy.
+ */
+async function media(req, res, url) {
+  let target = url.searchParams.get("url") ?? "";
+  if (!/^https?:\/\//i.test(target)) return res.writeHead(400).end();
+  const headers = { Accept: "*/*" };
+  if (req.headers.range) headers.Range = req.headers.range;
+  try {
+    let r;
+    for (let hops = 0; ; hops++) {
+      r = await send(req.method, target, headers);
+      const location = r.headers.location;
+      if (r.status < 300 || r.status >= 400 || !location || hops >= 5) break;
+      target = new URL(location, target).href;
+    }
+    const out = { "Cache-Control": "no-store", "Content-Length": String(r.body.length) };
+    for (const k of ["content-type", "content-range", "accept-ranges", "last-modified", "etag"]) if (r.headers[k]) out[k] = r.headers[k];
+    console.log(`proxy media ${r.status} ${target} (${r.body.length} bytes)`);
+    res.writeHead(r.status, out).end(req.method === "HEAD" ? undefined : r.body);
+  } catch (e) {
+    console.log(`proxy media ${failureKind(e)} ${target}: ${e.message}`);
+    res.writeHead(502).end();
   }
 }
 
