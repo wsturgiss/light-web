@@ -76,6 +76,9 @@ for (const step of process.argv.slice(2)) {
   else if (kind === "click") { const [x, y] = nums(); await mouse("mousePressed", x, y); await sleep(60); await mouse("mouseReleased", x, y); }
   else if (kind === "drag") {
     const [x1, y1, x2, y2] = nums();
+    // Hover first, as a real mouse would: pressing where the pointer has never been makes the
+    // browser send a "pointer entered" with the button already down, which Compose takes for a tap.
+    await mouse("mouseMoved", x1, y1, { button: "none" });
     await mouse("mousePressed", x1, y1);
     for (let i = 1; i <= 12; i++) { await mouse("mouseMoved", x1 + (x2 - x1) * i / 12, y1 + (y2 - y1) * i / 12); await sleep(16); }
     await mouse("mouseReleased", x2, y2);
