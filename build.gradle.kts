@@ -62,6 +62,10 @@ val rewrites = mapOf(
     "reader/com/yarosz/reader/Epub.kt" to listOf(
         "spine += attrs.getValue(\"idref\") to" to "spine += attrs.getValue(\"idref\")!! to",
     ),
+    // Removing an unset preference throws on Kotlin/Wasm (see lightweb.removePreference).
+    "amp/com/sublunar/amp/data/AppSettings.kt" to listOf(
+        "p.remove(" to "lightweb.removePreference(p, ",
+    ),
     // Kotlin/Wasm's LinkedHashMap is final and has no access order; light-amp's loopback proxy
     // subclasses java.util's for an LRU table (see AccessOrderLinkedHashMap).
     "amp/com/sublunar/amp/data/StreamProxy.kt" to listOf(

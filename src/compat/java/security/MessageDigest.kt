@@ -1,7 +1,7 @@
 package java.security
 
-/** `java.security.MessageDigest`, SHA-256 only. */
-class MessageDigest private constructor() {
+/** `java.security.MessageDigest`: SHA-256 and MD5 (Subsonic's login token is an MD5). */
+class MessageDigest private constructor(private val hash: (ByteArray) -> ByteArray) {
     private val buffer = ArrayList<Byte>()
 
     fun update(input: ByteArray, offset: Int = 0, len: Int = input.size) {
@@ -10,14 +10,17 @@ class MessageDigest private constructor() {
 
     fun update(b: Byte) { buffer.add(b) }
 
-    fun digest(): ByteArray = sha256(buffer.toByteArray()).also { buffer.clear() }
+    fun digest(): ByteArray = hash(buffer.toByteArray()).also { buffer.clear() }
+
+    fun reset() = buffer.clear()
 
     fun digest(input: ByteArray): ByteArray { update(input); return digest() }
 
     companion object {
-        fun getInstance(algorithm: String): MessageDigest {
-            if (algorithm.uppercase().replace("-", "") != "SHA256") throw NoSuchAlgorithmException(algorithm)
-            return MessageDigest()
+        fun getInstance(algorithm: String): MessageDigest = when (algorithm.uppercase().replace("-", "")) {
+            "SHA256" -> MessageDigest(::sha256)
+            "MD5" -> MessageDigest(::md5)
+            else -> throw NoSuchAlgorithmException(algorithm)
         }
     }
 }
@@ -64,4 +67,55 @@ private fun sha256(message: ByteArray): ByteArray {
         h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh
     }
     return ByteArray(32) { (h[it / 4] ushr (24 - 8 * (it % 4))).toByte() }
+}
+
+// MD5, RFC 1321.
+private val MD5_S = intArrayOf(
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+)
+
+/** floor(|sin(i + 1)| * 2^32), as the RFC tabulates. */
+private val MD5_K = IntArray(64) { (kotlin.math.abs(kotlin.math.sin((it + 1).toDouble())) * 4294967296.0).toLong().toInt() }
+
+private fun md5(message: ByteArray): ByteArray {
+    var a0 = 0x67452301
+    var b0 = -0x10325477
+    var c0 = -0x67452302
+    var d0 = 0x10325476
+    val bitLen = message.size.toLong() * 8
+    val padded = ByteArray(((message.size + 9 + 63) / 64) * 64)
+    message.copyInto(padded)
+    padded[message.size] = 0x80.toByte()
+    for (i in 0 until 8) padded[padded.size - 8 + i] = (bitLen ushr (8 * i)).toByte() // little-endian
+    val m = IntArray(16)
+    for (chunk in padded.indices step 64) {
+        for (i in 0 until 16) {
+            val j = chunk + i * 4
+            m[i] = (padded[j].toInt() and 0xff) or (padded[j + 1].toInt() and 0xff shl 8) or
+                (padded[j + 2].toInt() and 0xff shl 16) or (padded[j + 3].toInt() and 0xff shl 24)
+        }
+        var a = a0; var b = b0; var c = c0; var d = d0
+        for (i in 0 until 64) {
+            val f: Int
+            val g: Int
+            when (i / 16) {
+                0 -> { f = (b and c) or (b.inv() and d); g = i }
+                1 -> { f = (d and b) or (d.inv() and c); g = (5 * i + 1) % 16 }
+                2 -> { f = b xor c xor d; g = (3 * i + 5) % 16 }
+                else -> { f = c xor (b or d.inv()); g = (7 * i) % 16 }
+            }
+            val t = d
+            d = c
+            c = b
+            b += (a + f + MD5_K[i] + m[g]).rotateLeft(MD5_S[i])
+            a = t
+        }
+        a0 += a; b0 += b; c0 += c; d0 += d
+    }
+    val out = ByteArray(16)
+    for ((k, v) in intArrayOf(a0, b0, c0, d0).withIndex()) for (i in 0 until 4) out[k * 4 + i] = (v ushr (8 * i)).toByte()
+    return out
 }

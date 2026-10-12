@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.core.okio.WebLocalStorage
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferencesSerializer
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -112,4 +113,16 @@ private class JsonPreferencesMigration(toolId: String) : DataMigration<Preferenc
     override suspend fun cleanUp() {
         runCatching { localStorage.removeItem(oldKey) }
     }
+}
+
+/**
+ * `p.remove(key)`, discarding what it returns. DataStore's MutablePreferences.remove is declared
+ * to return the key's type but returns null for a key that isn't set; the JVM never looks at a
+ * discarded result, but Kotlin/Wasm unboxes it at the call site (a Boolean key: "Cannot cast
+ * null to kotlin.Boolean"), so removing an unset preference throws. Here the result stays an
+ * erased T and is never unboxed. Tools that remove preferences get calls to this by an exact
+ * rewrite (build.gradle.kts).
+ */
+fun <T> removePreference(p: MutablePreferences, key: Preferences.Key<T>) {
+    p.remove(key)
 }
