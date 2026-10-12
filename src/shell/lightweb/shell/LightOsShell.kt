@@ -29,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.WindowInfo
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
@@ -145,9 +148,15 @@ fun LightOsShell() {
             val w = with(outer) { (SCREEN_W_DP * scale).toDp() }
             val h = with(outer) { (SCREEN_H_DP * scale).toDp() }
             Box(Modifier.size(w, h).background(Color.Black)) {
+                // The phone's screen as far as tools can ask: its density, its configuration and its
+                // window. Tools that size themselves from the window (light-amp scales its layout
+                // from containerSize) would otherwise get the whole browser window.
+                val outerWindow = LocalWindowInfo.current
+                val screenWindow = remember(outerWindow, scale) { ScreenWindowInfo(outerWindow, IntSize(SCREEN_W_DP * scale, SCREEN_H_DP * scale)) }
                 CompositionLocalProvider(
                     LocalDensity provides Density(scale.toFloat(), fontScale = 1f),
                     LocalConfiguration provides Configuration(SCREEN_W_DP, SCREEN_H_DP),
+                    LocalWindowInfo provides screenWindow,
                 ) {
                     val colors by LightThemeController.colors.collectAsState()
                     LightTheme(colors = colors) {
@@ -223,3 +232,6 @@ private fun toolKeyCode(key: String): Int? = when (key) {
 private fun setGreyscale(on: Boolean): Unit = js(
     "{ document.body.style.filter = on ? 'grayscale(1)' : ''; }"
 )
+
+/** The browser's window info, but sized as the phone's screen. */
+private class ScreenWindowInfo(outer: WindowInfo, override val containerSize: IntSize) : WindowInfo by outer

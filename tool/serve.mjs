@@ -4,7 +4,9 @@
 //     dir    default: build/dist/wasmJs/productionExecutable
 //     port   default: 8765
 //     --allow-host  a host the proxy may reach although it's on a private network (a music
-//                   server on the LAN, say): a name or an address, exactly as tools use it.
+//                   server on the LAN, say): a name, as tools use it, or an IP address, which
+//                   allows any name that resolves to it (Plex reaches a LAN server through
+//                   per-server *.plex.direct names; allowing the server's address covers them).
 //
 // Static files are served with no-cache, so a rebuild is what the next reload gets.
 //
@@ -105,8 +107,8 @@ class Blocked extends Error {
 function publicLookup(hostname, options, callback) {
   dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
     if (err) return callback(err);
-    const bad = addresses.find((a) => isPrivate(a.address));
-    if (bad) return callback(new Blocked(`${hostname} is ${bad.address}, a private address`));
+    const bad = addresses.find((a) => isPrivate(a.address) && !allowedHosts.has(hostKey(a.address)));
+    if (bad) return callback(new Blocked(`${hostname} is ${bad.address}, a private address; allow it with --allow-host ${bad.address}`));
     if (options.all) callback(null, addresses);
     else callback(null, addresses[0].address, addresses[0].family);
   });
@@ -130,7 +132,7 @@ function send(method, target, headers, body) {
   const allowed = allowedHosts.has(host);
   // An address in the URL is never looked up, so it's checked here instead.
   if (!allowed && isIP(host) && isPrivate(host)) {
-    return Promise.reject(new Blocked(`${host} is a private address`));
+    return Promise.reject(new Blocked(`${host} is a private address; allow it with --allow-host ${host}`));
   }
   const request = url.protocol === "https:" ? httpsRequest : httpRequest;
   return new Promise((done, fail) => {
