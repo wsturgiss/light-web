@@ -128,8 +128,8 @@ light-amp-fork itself is untouched (branch `playlist-membership-cache` checked o
   to enter a plex.tv/link code for it (expires in minutes).
 - **Fixed late, not yet in Will's tab:** a settings write inside `runBlocking` crashed amp's
   boot once a source was saved; tool preferences now write to memory at once and save behind
-  (`CachedDataStore`). Will's 8765 server serves the production build from before this fix:
-  rebuild (`wasmJsBrowserDistribution`) before he reloads.
+  (`CachedDataStore`). The production build Will's 8765 server serves includes it (rebuilt
+  2026-10-12); his tab needs a reload.
 - **Known:** the reachability ping times out during a big sync (6 connections per origin);
   Plex advertises Docker bridge addresses (172.17/18.x) that the proxy rightly blocks; app wasm
   is 2.39 MB gzipped with amp; the whole app's code loads up front.
