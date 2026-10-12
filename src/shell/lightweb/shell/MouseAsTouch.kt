@@ -12,6 +12,10 @@ package lightweb.shell
  *
  * The rest of the press goes to the canvas it started on, even if the mouse leaves it, as a
  * finger's touches stay with the view they started on.
+ *
+ * Stopping the mouse press also stops the browser focusing the canvas, which a click otherwise
+ * does, and Compose hears the computer's keys only through the focused canvas: so the press
+ * focuses it, as a click would.
  */
 object MouseAsTouch {
     fun install() = installListeners()
@@ -35,6 +39,7 @@ private fun installListeners(): Unit = js(
                     const t = e.composedPath()[0];
                     if (!globalThis.lightwebMouseAsTouch || e.button !== 0 || !(t instanceof HTMLCanvasElement)) return;
                     target = t;
+                    t.focus({ preventScroll: true });
                 } else if (!target) return;
                 e.stopImmediatePropagation();
                 e.preventDefault();
