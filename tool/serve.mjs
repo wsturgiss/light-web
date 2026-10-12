@@ -8,13 +8,15 @@
 //
 // Static files are served with no-cache, so a rebuild is what the next reload gets.
 //
-// GET /proxy?url=<http(s) URL> fetches the URL from here and hands it back to the page, which is
-// what lets a tool reach sites that don't allow cross-origin requests (see java.net's stand-in,
-// src/compat/java/net/Net.kt). It answers 200 whatever the site said, with the site's status in
+// /proxy?url=<http(s) URL> makes the request from here and hands the answer back to the page,
+// which is what lets a tool reach sites that don't allow cross-origin requests (see
+// lightweb.compat.WebHttp). GET, HEAD, POST, PUT, PATCH and DELETE, with the request's body. The
+// tool's own request headers come as X-Proxy-H-<name> (some can't be set by a page under their
+// own name, and this keeps them apart from the browser's); X-Proxy-User-Agent is the older form
+// of X-Proxy-H-User-Agent. It answers 200 whatever the site said, with the site's status in
 // X-Proxy-Status, and doesn't follow redirects: the tool sees them and follows them itself, as
 // on the phone, each hop through here again. A failure comes back as X-Proxy-Error: dns, refused,
-// cert, tls, timeout, blocked or unreachable. X-Proxy-User-Agent becomes the request's
-// User-Agent, which a page can't set itself.
+// cert, tls, timeout, blocked or unreachable.
 //
 // For one person on one machine. What keeps the proxy theirs:
 // - It listens on 127.0.0.1, so other machines can't connect.
@@ -63,6 +65,10 @@ const dropped = /^(content-encoding|content-length|transfer-encoding|connection|
 
 const TIMEOUT_MS = 30_000;
 const MAX_BYTES = 256 * 1024 * 1024;
+const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
+const methods = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
+// Request headers a tool can't pass on: the connection's own, and the proxy's.
+const notForwarded = /^(host|connection|keep-alive|transfer-encoding|content-length|upgrade|te|trailer|proxy-.*)$/i;
 
 // Addresses the proxy won't connect to: everything that isn't the public internet.
 const privateAddresses = new BlockList();
@@ -117,8 +123,8 @@ function failureKind(e) {
   return "unreachable";
 }
 
-/** One GET, no redirects followed, the body decompressed. Resolves to { status, headers, body }. */
-function get(target, headers) {
+/** One request, no redirects followed, the body decompressed. Resolves to { status, headers, body }. */
+function send(method, target, headers, body) {
   const url = new URL(target);
   const host = hostKey(url.hostname);
   const allowed = allowedHosts.has(host);
@@ -126,9 +132,10 @@ function get(target, headers) {
   if (!allowed && isIP(host) && isPrivate(host)) {
     return Promise.reject(new Blocked(`${host} is a private address`));
   }
-  const send = url.protocol === "https:" ? httpsRequest : httpRequest;
+  const request = url.protocol === "https:" ? httpsRequest : httpRequest;
   return new Promise((done, fail) => {
-    const req = send(url, {
+    const req = request(url, {
+      method,
       headers: { ...headers, "Accept-Encoding": "gzip, deflate, br" },
       lookup: allowed ? undefined : publicLookup,
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -150,7 +157,21 @@ function get(target, headers) {
       res.on("error", fail);
     });
     req.on("error", fail);
-    req.end();
+    req.end(body);
+  });
+}
+
+/** A request's body, up to MAX_REQUEST_BYTES. */
+function readBody(req) {
+  return new Promise((done, fail) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > MAX_REQUEST_BYTES) { req.destroy(); fail(new Error("request body too large")); } else chunks.push(c);
+    });
+    req.on("end", () => done(Buffer.concat(chunks)));
+    req.on("error", fail);
   });
 }
 
@@ -173,13 +194,19 @@ async function proxy(req, res, url) {
   if (!/^https?:\/\//i.test(target)) {
     return res.writeHead(400, { "X-Proxy-Error": "unreachable" }).end("only http(s) URLs");
   }
+  if (!methods.has(req.method)) return res.writeHead(405).end();
   const headers = { Accept: "*/*" };
   if (req.headers["x-proxy-user-agent"]) headers["User-Agent"] = req.headers["x-proxy-user-agent"];
+  for (const [k, v] of Object.entries(req.headers)) {
+    const name = /^x-proxy-h-(.+)$/i.exec(k)?.[1];
+    if (name && !notForwarded.test(name)) headers[name] = v;
+  }
   try {
-    const r = await get(target, headers);
+    const body = req.method === "GET" || req.method === "HEAD" ? undefined : await readBody(req);
+    const r = await send(req.method, target, headers, body);
     const out = { "X-Proxy-Status": String(r.status), "Cache-Control": "no-store" };
     for (const [k, v] of Object.entries(r.headers)) if (!dropped.test(k)) out[k] = v;
-    console.log(`proxy ${r.status} ${target} (${r.body.length} bytes)`);
+    console.log(`proxy ${req.method} ${r.status} ${target} (${r.body.length} bytes)`);
     res.writeHead(200, out).end(r.body);
   } catch (e) {
     const kind = failureKind(e);
@@ -206,8 +233,10 @@ createServer((req, res) => {
     return res.writeHead(403).end("light-web answers only at localhost");
   }
   const url = new URL(req.url, "http://localhost");
-  if (req.method !== "GET" && req.method !== "HEAD") return res.writeHead(405).end();
+  // Never OPTIONS: refusing every preflight is what keeps other origins from sending the proxy's
+  // header (see the top of this file).
   if (url.pathname === "/proxy") return proxy(req, res, url);
+  if (req.method !== "GET" && req.method !== "HEAD") return res.writeHead(405).end();
   return file(res, url.pathname);
 }).listen(port, "127.0.0.1", () => {
   console.log(`light-web: http://localhost:${port}/ (serving ${root})`);

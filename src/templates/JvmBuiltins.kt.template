@@ -59,6 +59,27 @@ internal fun StringBuilder.appendCodePoint(codePoint: Int): StringBuilder = jvmA
 /** `java.lang.Thread`. The page has one thread. */
 internal typealias Thread = lightweb.compat.JvmThread
 
+/** `java.lang.Runnable`. */
+internal typealias Runnable = lightweb.compat.JvmRunnable
+
+/** `java.lang.InterruptedException`. */
+internal typealias InterruptedException = lightweb.compat.JvmInterruptedException
+
+/** kotlin.io's `ByteArray.inputStream()`, JVM-only. */
+internal fun ByteArray.inputStream(): java.io.InputStream = java.io.ByteArrayInputStream(this)
+
+/** kotlin.io's `InputStream.copyTo`, JVM-only. */
+internal fun java.io.InputStream.copyTo(out: java.io.OutputStream, bufferSize: Int = 8192): Long = lightweb.compat.copyStream(this, out, bufferSize)
+
+/** kotlin.io's `OutputStream.buffered()`, JVM-only. */
+internal fun java.io.OutputStream.buffered(bufferSize: Int = 8192): java.io.BufferedOutputStream = java.io.BufferedOutputStream(this, bufferSize)
+
+/** kotlin.collections' `Enumeration.toList()`, JVM-only. */
+internal fun <T> java.util.Enumeration<T>.toList(): List<T> = lightweb.compat.enumerationToList(this)
+
+/** java.util.Map.remove(key, value), a JVM default method. */
+internal fun <K, V> MutableMap<K, V>.remove(key: K, value: V): Boolean = lightweb.compat.removeIfMapped(this, key, value)
+
 /** kotlin.text.Charsets, JVM-only. */
 internal typealias Charsets = lightweb.compat.JvmCharsets
 

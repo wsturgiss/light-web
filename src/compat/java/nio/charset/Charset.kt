@@ -16,6 +16,13 @@ class Charset private constructor(private val canonical: String) {
             it[0] = 0xfe.toByte(); it[1] = 0xff.toByte()
             for (i in s.indices) { it[2 + 2 * i] = (s[i].code shr 8).toByte(); it[3 + 2 * i] = s[i].code.toByte() }
         }
+        UTF_16BE, UTF_16LE -> ByteArray(s.length * 2).also {
+            val little = this == UTF_16LE
+            for (i in s.indices) {
+                it[2 * i + (if (little) 1 else 0)] = (s[i].code shr 8).toByte()
+                it[2 * i + (if (little) 0 else 1)] = s[i].code.toByte()
+            }
+        }
         else -> {
             val max = if (this == US_ASCII) 0x7f else 0xff
             ByteArray(s.length) { i -> s[i].code.let { if (it > max) '?'.code else it }.toByte() }
@@ -24,10 +31,10 @@ class Charset private constructor(private val canonical: String) {
 
     fun decode(bytes: ByteArray, offset: Int = 0, length: Int = bytes.size - offset): String = when (this) {
         UTF_8 -> bytes.decodeToString(offset, offset + length)
-        UTF_16 -> {
+        UTF_16, UTF_16BE, UTF_16LE -> {
             var i = offset
-            var little = false
-            if (length >= 2) {
+            var little = this == UTF_16LE
+            if (this == UTF_16 && length >= 2) {
                 val b0 = bytes[offset].toInt() and 0xff
                 val b1 = bytes[offset + 1].toInt() and 0xff
                 if (b0 == 0xfe && b1 == 0xff) i += 2 else if (b0 == 0xff && b1 == 0xfe) { i += 2; little = true }
@@ -57,12 +64,15 @@ class Charset private constructor(private val canonical: String) {
         val US_ASCII = Charset("US-ASCII")
         val ISO_8859_1 = Charset("ISO-8859-1")
         val UTF_16 = Charset("UTF-16")
+        val UTF_16BE = Charset("UTF-16BE")
+        val UTF_16LE = Charset("UTF-16LE")
 
         private val ALIASES = mapOf(
             "utf8" to UTF_8, "utf-8" to UTF_8,
             "us-ascii" to US_ASCII, "ascii" to US_ASCII,
             "iso-8859-1" to ISO_8859_1, "latin1" to ISO_8859_1, "iso8859_1" to ISO_8859_1,
             "utf-16" to UTF_16, "utf16" to UTF_16,
+            "utf-16be" to UTF_16BE, "utf-16le" to UTF_16LE,
         )
 
         fun forName(charsetName: String): Charset =

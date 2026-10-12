@@ -6,7 +6,6 @@ import java.io.File
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import lightweb.Assets
-import lightweb.webPreferencesDataStore
 
 /**
  * The SDK's screen, with the same public API as on Android. Navigation goes to the
@@ -66,13 +65,11 @@ abstract class SimpleLightScreen<ResultType>(sealedActivity: SealedLightActivity
  */
 class SealedLightContext internal constructor(internal val host: LightToolHost) {
     val filesDir: File by lazy { File("/data/${host.tool.id}/files") }
-    val dataStore: DataStore<Preferences> by lazy { dataStores.getOrPut(host.tool.id) { webPreferencesDataStore(host.tool.id) } }
+    val dataStore: DataStore<Preferences> by lazy { lightweb.toolDataStore(host.tool.id) }
     val connectivity: LightConnectivity by lazy { LightConnectivity() }
     fun readAsset(path: String): ByteArray = Assets.readAsset(host.tool.assetPack, path)
 }
 
-// One per tool for the life of the page, as Android's preferencesDataStore delegate gives one per app.
-private val dataStores = HashMap<String, DataStore<Preferences>>()
 
 /** Wraps the host so user code can pass it around without reaching into it, as on Android. */
 class SealedLightActivity(internal val activity: LightToolHost)

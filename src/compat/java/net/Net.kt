@@ -100,7 +100,7 @@ private class WebHttpURLConnection(url: URL) : HttpURLConnection(url) {
     override fun connect() {
         if (connected) return
         if (requestMethod != "GET") throw IOException("Only GET is supported on the web")
-        val proxied = Proxy.available
+        val proxied = lightweb.compat.WebHttp.proxied
         val result = xhrGet(url.toString(), proxied, requestHeaders["User-Agent"].orEmpty())
         resultError(result)?.let { kind -> throw failure(kind, resultMessage(result)) }
         status = resultStatus(result)
@@ -147,25 +147,6 @@ private fun parseHeaders(raw: String): Map<String, String> = raw.split("\r\n").m
     val colon = line.indexOf(':')
     if (colon <= 0) null else line.substring(0, colon).trim().lowercase() to line.substring(colon + 1).trim()
 }.toMap()
-
-/** Whether the page is served by tool/serve.mjs, which has `/proxy`. Asked once. */
-private object Proxy {
-    val available: Boolean by lazy { probeProxy() }
-}
-
-private fun probeProxy(): Boolean = js(
-    """{
-        try {
-            const x = new XMLHttpRequest();
-            x.open('GET', '/proxy?probe', false);
-            x.setRequestHeader('X-Lightweb-Proxy', '1');
-            x.send();
-            return x.getResponseHeader('X-Lightweb-Proxy') === '1';
-        } catch (e) {
-            return false;
-        }
-    }"""
-)
 
 private fun xhrGet(url: String, viaProxy: Boolean, userAgent: String): JsAny = js(
     """{

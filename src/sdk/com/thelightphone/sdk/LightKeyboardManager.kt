@@ -16,3 +16,6 @@ fun rememberKeyboardOptions(
     initialOptions: KeyboardOptions = defaultKeyboardOptions(),
     allowDictationKey: Boolean = false,
 ): StateFlow<KeyboardOptions> = remember { MutableStateFlow(initialOptions) }
+
+/** On the phone, the user's keyboard settings from LightOS. Here, the defaults. */
+suspend fun refreshKeyboardOptions(): KeyboardOptions? = defaultKeyboardOptions()

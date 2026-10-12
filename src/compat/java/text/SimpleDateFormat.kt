@@ -7,12 +7,14 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * `java.text.SimpleDateFormat`'s formatting, in the browser's time zone, for numeric patterns:
+ * `java.text.SimpleDateFormat`'s formatting, in [timeZone] (the browser's unless set), for numeric patterns:
  * y M d H h m s S a and quoted text. Month and day names (MMM, EEE) aren't localised here.
  */
 class SimpleDateFormat(private val pattern: String, @Suppress("unused") private val locale: Locale? = null) {
+    var timeZone: java.util.TimeZone = java.util.TimeZone.getDefault()
+
     fun format(date: Date): String {
-        val t = Instant.fromEpochMilliseconds(date.time).toLocalDateTime(TimeZone.currentSystemDefault())
+        val t = Instant.fromEpochMilliseconds(date.time).toLocalDateTime(TimeZone.of(timeZone.id))
         val out = StringBuilder()
         var i = 0
         while (i < pattern.length) {

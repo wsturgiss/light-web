@@ -22,7 +22,7 @@ class MessageDigest private constructor() {
     }
 }
 
-class NoSuchAlgorithmException(message: String) : Exception(message)
+open class NoSuchAlgorithmException(message: String? = null) : GeneralSecurityException(message)
 
 private val K = intArrayOf(
     0x428a2f98, 0x71374491, -0x4a3f0431, -0x164a245b, 0x3956c25b, 0x59f111f1, -0x6dc07d5c, -0x54e3a12b,

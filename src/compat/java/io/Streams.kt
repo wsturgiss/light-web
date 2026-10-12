@@ -219,3 +219,92 @@ class StringReader(private val s: String) : Reader() {
         return n
     }
 }
+
+/** Marker interface; serialization isn't provided. */
+interface Serializable
+
+/** Buffers nothing: the stream under it is in memory already. */
+class BufferedOutputStream(private val out: OutputStream, size: Int = 8192) : OutputStream() {
+    override fun write(b: Int) = out.write(b)
+    override fun write(b: ByteArray, off: Int, len: Int) = out.write(b, off, len)
+    override fun flush() = out.flush()
+    override fun close() = out.close()
+}
+
+/**
+ * `java.io.RandomAccessFile` over a light-web file (bytes in memory, see `WebFiles`). Mode "r"
+ * reads; "rw" also writes, saving the file on [close].
+ */
+class RandomAccessFile(private val file: File, mode: String) : Closeable {
+    constructor(name: String, mode: String) : this(File(name), mode)
+
+    private val writable = 'w' in mode
+    private var bytes: ByteArray = if (file.isFile) file.readBytes() else if (writable) ByteArray(0) else throw FileNotFoundException("${file.path} (No such file or directory)")
+    private var length = bytes.size
+    private var pos = 0L
+    private var dirty = false
+
+    val filePointer: Long get() = pos
+    fun getFilePointer(): Long = pos
+
+    fun length(): Long = length.toLong()
+
+    fun seek(pos: Long) {
+        if (pos < 0) throw IOException("Negative seek offset")
+        this.pos = pos
+    }
+
+    fun skipBytes(n: Int): Int {
+        val skip = maxOf(0, minOf(n.toLong(), length - pos)).toInt()
+        pos += skip
+        return skip
+    }
+
+    fun read(): Int = if (pos >= length) -1 else bytes[pos++.toInt()].toInt() and 0xff
+
+    fun read(b: ByteArray, off: Int = 0, len: Int = b.size): Int {
+        if (len == 0) return 0
+        if (pos >= length) return -1
+        val n = minOf(len.toLong(), length - pos).toInt()
+        bytes.copyInto(b, off, pos.toInt(), pos.toInt() + n)
+        pos += n
+        return n
+    }
+
+    fun readFully(b: ByteArray, off: Int = 0, len: Int = b.size) {
+        if (pos + len > length) throw EOFException()
+        read(b, off, len)
+    }
+
+    fun readInt(): Int {
+        val b = ByteArray(4).also(::readFully)
+        return ((b[0].toInt() and 0xff) shl 24) or ((b[1].toInt() and 0xff) shl 16) or ((b[2].toInt() and 0xff) shl 8) or (b[3].toInt() and 0xff)
+    }
+
+    fun readUnsignedByte(): Int = read().also { if (it < 0) throw EOFException() }
+
+    fun write(b: ByteArray, off: Int = 0, len: Int = b.size) {
+        if (!writable) throw IOException("Opened read-only")
+        val end = (pos + len).toInt()
+        if (end > bytes.size) bytes = bytes.copyOf(maxOf(end, bytes.size * 2))
+        b.copyInto(bytes, pos.toInt(), off, off + len)
+        pos = end.toLong()
+        length = maxOf(length, end)
+        dirty = true
+    }
+
+    fun write(b: Int) = write(byteArrayOf(b.toByte()))
+
+    fun setLength(newLength: Long) {
+        if (!writable) throw IOException("Opened read-only")
+        if (newLength > bytes.size) bytes = bytes.copyOf(newLength.toInt())
+        length = newLength.toInt()
+        if (pos > length) pos = length.toLong()
+        dirty = true
+    }
+
+    override fun close() {
+        if (dirty) file.writeBytes(bytes.copyOf(length))
+        dirty = false
+    }
+}

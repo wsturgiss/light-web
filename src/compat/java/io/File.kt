@@ -27,6 +27,9 @@ class File(path: String) : Comparable<File> {
     val canonicalPath: String get() = normalize(path)
     val canonicalFile: File get() = File(canonicalPath)
 
+    /** kotlin.io's File.normalize(): `.` and `..` resolved in the path. */
+    fun normalize(): File = File(normalize(path))
+
     fun exists(): Boolean = isFile || isDirectory
     val isFile: Boolean get() = WebFiles.read(path) != null
     val isDirectory: Boolean get() = WebFiles.paths().any { it.startsWith("$path/") }

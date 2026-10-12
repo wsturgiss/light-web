@@ -22,12 +22,15 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 import com.thelightphone.sdk.ui.lightClickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.delay
 import lightweb.LightTool
 
 /**
- * The toolbox: the time, then every tool by name, as LightOS lists them. [crash] is a tool
- * that has just stopped (see CrashGuard), said above the list until another tool is opened.
+ * The toolbox: the time, then every tool by name, as LightOS lists them, scrolling when they don't
+ * fit. [crash] is a tool that has just stopped (see CrashGuard), said above the list until another
+ * tool is opened.
  */
 @Composable
 fun Home(tools: List<LightTool>, crash: CrashGuard.Crash?, onOpen: (LightTool) -> Unit) {
@@ -35,6 +38,7 @@ fun Home(tools: List<LightTool>, crash: CrashGuard.Crash?, onOpen: (LightTool) -
         Modifier
             .fillMaxSize()
             .background(LightThemeTokens.colors.background)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 2f.gridUnitsAsDp(), vertical = 2f.gridUnitsAsDp()),
     ) {
         LightText(clock(), LightTextVariant.Detail, lighten = true)

@@ -33,6 +33,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import com.thelightphone.sdk.LightToolHost
+import lightweb.DisplayColor
+import lightweb.warmToolDataStore
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.lightClickable
@@ -74,7 +76,10 @@ fun LightOsShell() {
         Assets.load("keyboard")
         state = ShellState.Home
     }
-    LaunchedEffect(greyscale) { setGreyscale(greyscale) }
+    // A tool can ask for colour while it's open (LightDisplayColor), as LightOS lets it on the phone.
+    val toolWantsColour by DisplayColor.toolWantsColour.collectAsState()
+    val colourForTool = toolWantsColour && state is ShellState.Running
+    LaunchedEffect(greyscale, colourForTool) { setGreyscale(greyscale && !colourForTool) }
     LaunchedEffect(DeviceMode.current) { MouseAsTouch.enabled = DeviceMode.current == DeviceMode.Lp3 }
 
     fun open(tool: LightTool) {
@@ -84,8 +89,11 @@ fun LightOsShell() {
             Assets.load(tool.assetPack) { done, total -> state = ShellState.Loading(tool, done, total) }
             // What the tool saved before: Android reads its files synchronously, so they're read in now.
             WebFiles.load("/data/${tool.id}")
+            // And its preferences, which tools may read synchronously while starting (see toolDataStore).
+            warmToolDataStore(tool.id)
             val host = LightToolHost(tool) {
                 CrashGuard.toolClosed()
+                DisplayColor.toolWantsColour.value = false
                 state = ShellState.Home
             }
             tool.entryPoint?.let { ep -> scope.launch { ep.onToolCreate(MutableStateFlow(null)) } }
