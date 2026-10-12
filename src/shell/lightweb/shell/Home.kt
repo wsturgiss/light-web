@@ -202,6 +202,20 @@ private suspend fun PointerInputScope.swipePages(
 /** Names on a full page, as on the phone. */
 private const val PER_PAGE = 6
 
+/** Another tab is using light-web (see TabLock); this one can take over. */
+@Composable
+fun Elsewhere(onUseHere: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().background(LightThemeTokens.colors.background).padding(horizontal = 2f.gridUnitsAsDp()),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        LightText("light-web is open in another tab", LightTextVariant.Heading, align = TextAlign.Center)
+        Spacer(Modifier.height(3f.gridUnitsAsDp()))
+        LightText("Use here", LightTextVariant.Subtitle, align = TextAlign.Center, modifier = Modifier.lightClickable(onClick = onUseHere))
+    }
+}
+
 /** While a tool's assets come down; [done] of [total] files. */
 @Composable
 fun Loading(done: Int, total: Int) {

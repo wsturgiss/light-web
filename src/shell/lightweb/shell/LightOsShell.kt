@@ -1,5 +1,7 @@
 package lightweb.shell
 
+import kotlinx.coroutines.delay
+
 import android.content.res.Configuration
 import android.view.KeyEvent
 import androidx.compose.foundation.background
@@ -59,6 +61,8 @@ private const val SCREEN_H_DP = 413
 
 private sealed interface ShellState {
     data object Starting : ShellState
+    /** Another tab is using light-web's data (see TabLock). */
+    data object Elsewhere : ShellState
     data object Home : ShellState
     data class Loading(val tool: LightTool, val done: Int, val total: Int) : ShellState
     data class Running(val host: LightToolHost) : ShellState
@@ -75,11 +79,26 @@ fun LightOsShell() {
     var crash by remember { mutableStateOf(CrashGuard.lastCrash) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    suspend fun start() {
+        // Asked to let go by a tab taking over: reload, after a moment for saves still under way,
+        // which frees everything this tab had open (see TabLock).
+        TabLock.onTakeOver { scope.launch { delay(300); window.location.reload() } }
         // What LightOS itself provides to every tool: the SDK's icons and the LP3 keyboard's.
         Assets.load("sdk-ui")
         Assets.load("keyboard")
         state = ShellState.Home
+    }
+
+    LaunchedEffect(Unit) {
+        if (TabLock.acquire()) start() else state = ShellState.Elsewhere
+    }
+
+    fun useHere() {
+        state = ShellState.Starting
+        scope.launch {
+            TabLock.takeOver()
+            start()
+        }
     }
     // A tool can ask for colour while it's open (LightDisplayColor), as LightOS lets it on the phone.
     val toolWantsColour by DisplayColor.toolWantsColour.collectAsState()
@@ -164,7 +183,7 @@ fun LightOsShell() {
                 ) {
                     val colors by LightThemeController.colors.collectAsState()
                     LightTheme(colors = colors) {
-                        Screen(state, crash, onOpen = ::open)
+                        Screen(state, crash, onOpen = ::open, onUseHere = ::useHere)
                     }
                 }
             }
@@ -179,9 +198,10 @@ fun LightOsShell() {
 }
 
 @Composable
-private fun Screen(state: ShellState, crash: CrashGuard.Crash?, onOpen: (LightTool) -> Unit) {
+private fun Screen(state: ShellState, crash: CrashGuard.Crash?, onOpen: (LightTool) -> Unit, onUseHere: () -> Unit) {
     when (state) {
         ShellState.Starting -> Unit
+        ShellState.Elsewhere -> Elsewhere(onUseHere)
         ShellState.Home -> Home(tools, crash, onOpen)
         is ShellState.Loading -> Loading(state.done, state.total)
         is ShellState.Running -> state.host.Content()
