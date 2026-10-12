@@ -59,7 +59,7 @@ in `src/sdk`. A few exact text rewrites of the *copied* sources are allowed (`re
 | ⬜ | Unit tests for the pure-logic stand-ins (URI, inflate, the SAX parser, URLEncoder, `%x`), expected values taken from the JVM | suggested before more stand-ins |
 | ⬜ | Next stand-ins by the coverage list: SDK permissions (`checkPermission`, `rememberPermissionRequestLauncher`, 3 tools), `LightQrCodeScanner` (3), SDK audio (2), Ktor (2; it has a wasm build) | after Room 3 |
 | ⬜ | Network without freezing the page (downloads block it: ~0.5 s per 700 KB) | not started; no plan yet |
-| 🟡 | 6. light-amp (light-amp-fork): taken under the widened SDK policy; compiles (two exact rewrites) and runs: Subsonic browse and play verified against Navidrome's demo; Plex link code works, linking needs Will. See TOOL-ONBOARDING.md | branch `light-amp` |
+| 🟡 | 6. light-amp (light-amp-fork): taken under the widened SDK policy; compiles (two exact rewrites) and runs: Subsonic browse and play verified against Navidrome's demo; Plex verified against Will's server (link, sync of 630 albums, artwork). See TOOL-ONBOARDING.md | branch `light-amp` |
 | ⏸ | Hosting a public build, and a GitHub remote | deferred by Will: develop first |
 | ⬜ | 7. Longer term: if Light's SDK moved to multiplatform libraries, most of `src/compat` goes | outside our control |
 
@@ -112,32 +112,29 @@ diagnostics log after a real crash, a book over a few MB. Interval Training and 
 (There's no training backup *import* to verify: `TrainingBackupSource` only answers LightOS's
 backup questions from the export files, and nothing restores from them yet.)
 
-## Where light-amp stands (2026-10-12, mid-session)
+## Where light-amp stands (2026-10-12)
 
 Branch `light-amp` (on top of `local-proxy`, on top of `room3`; none merged into `main`).
 light-amp-fork itself is untouched (branch `playlist-membership-cache` checked out).
 
 - **Works:** compiles; Subsonic end to end against Navidrome's public demo (add source, sync,
-  artwork, album, play/pause/next). Plex: link code from plex.tv, polling, server found via
-  plex.tv resources, `/library/sections` and playlists fetched through the proxy.
-- **Open bug, being chased:** with Will's Plex (192.168.200.124), amp fetched sections and
-  playlists, then stopped: no `/library/sections/<id>/all` request ever reached the proxy, and
-  no connections were left open. Likely an error on the browser side before the album request
-  (amp catches it into a sync state). Next: link a headless amp (dev build, port 8781, served
-  with `--allow-host 192.168.200.124`) to Will's Plex and read its log for the failure. Will has
-  to enter a plex.tv/link code for it (expires in minutes).
-- **Fixed late, not yet in Will's tab:** a settings write inside `runBlocking` crashed amp's
-  boot once a source was saved; tool preferences now write to memory at once and save behind
-  (`CachedDataStore`). The production build Will's 8765 server serves includes it (rebuilt
-  2026-10-12); his tab needs a reload.
+  artwork, album, play/pause/next). Plex end to end against Will's server (192.168.200.124):
+  link code from plex.tv, server found via plex.tv resources, sections, playlists, all 630
+  albums and their songs (about 7 s), and 579 covers (18.8 MB in 19 s). Checked in headless
+  Chromium on the dev build, then by Will in his own tab on the production build.
+- **Fixed: Plex sync stopping after the playlists.** Earlier, amp fetched sections and playlists
+  and never asked for an album page. It hasn't happened since the fix below. That fix is the
+  likely cause, going by timing; it wasn't confirmed by reproducing the failure.
+- **The fix:** a settings write inside `runBlocking` crashed amp's boot once a source was saved;
+  tool preferences now write to memory at once and save behind (`CachedDataStore`).
 - **Known:** the reachability ping times out during a big sync (6 connections per origin);
   Plex advertises Docker bridge addresses (172.17/18.x) that the proxy rightly blocks; app wasm
   is 2.39 MB gzipped with amp; the whole app's code loads up front.
 - **Running on Will's machine:** `node tool/serve.mjs build/dist/wasmJs/productionExecutable
-  8765 --allow-host 192.168.200.124` (Will's, detached). For debugging: a dev server on 8781,
-  headless Chromium on CDP port 9334, and a console logger writing amp's output to the
-  session scratchpad (`amp-headless.log`). Stop them by port (`ss -ltnp`); their process name is
-  `node-MainThread`, so `pgrep -x node` misses them.
+  8765 --allow-host 192.168.200.124` (Will's, detached). The debugging setup (dev server on 8781,
+  headless Chromium on 9334, console logger) was stopped once Plex worked. To bring it back, see
+  "Test in headless Chromium" below; its node processes are named `node-MainThread`, so stop
+  them by port (`ss -ltnp`), not `pgrep -x node`.
 
 ## Decisions so far, and why
 
