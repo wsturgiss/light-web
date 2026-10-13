@@ -71,11 +71,13 @@ cd deploy && npx wrangler pages deploy
   100,000 relay requests a day it stops until the next day. Per-visitor rate limits need a custom
   domain (rate-limiting rules don't apply to `*.pages.dev`).
 - **The relay fetches only from an allowlist:** Gutenberg, Standard Ebooks, Navidrome's demo,
-  lrclib, plex.tv, and Will's own Plex server by its plex.direct ID (`*.b8bcfdfc….plex.direct`,
-  read from the server's certificate). IP and port changes need nothing; the ID changes only if
-  the server is re-claimed or reinstalled. Visitors' own servers stay out: opening all of
-  plex.direct would put other people's tokens through Will's function and make it a general Plex
-  proxy.
+  lrclib, plex.tv, and **any Plex server, over HTTPS only** (2026-10-13, Will: let visitors use
+  their own). A plex.direct name (`1-2-3-4.<id>.plex.direct`) resolves to whatever address is in
+  it, for any id, so the name alone would make the relay an open proxy; the certificate is what
+  proves a Plex server, since only Plex issues `*.<id>.plex.direct`. Checked on Cloudflare: a
+  made-up name pointing at another machine over HTTPS gets 526 (bad certificate), over HTTP 403.
+  Visitors' Plex tokens pass through the function (never logged). Other servers (Subsonic,
+  Jellyfin) stay out: nothing similar proves what they are.
 - **Who may use it:** the same `X-Lightweb-Proxy` header and `Sec-Fetch-Site` checks as locally.
   An `<audio>`/`<video>` element can't send the header, so a media request is taken on the
   browser's own `Sec-Fetch-Site: same-origin` + `Sec-Fetch-Dest: audio|video`, which a page can't
@@ -275,5 +277,5 @@ Not built: the same diff as a lint rule for tool authors.
 
 - **Catalog scan:** may light-web clone and build the public tools in `TOOL-CATALOG.md`? All,
   some, or none?
-- **Other people's Plex on the demo:** left out on purpose (credentials and abuse). Revisit with
-  a custom domain and rate limits, if ever.
+- **Rate limits:** with any Plex server allowed, the relay is open to more traffic. Per-visitor
+  limits need a custom domain on Cloudflare.

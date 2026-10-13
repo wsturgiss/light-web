@@ -3,8 +3,7 @@
 //
 // Hosted, it's reachable by anyone, so it's narrower than the local one:
 // - It fetches only from the sites in ALLOWED_HOSTS: public sites the demo's tools use.
-//   Visitors' own servers are out of scope; the one exception is Will's Plex server, whose token
-//   passes through here (never logged).
+//   Visitors' own servers are out of scope, except Plex servers (see PLEX_DIRECT).
 // - Only light-web's own pages can use it: the same X-Lightweb-Proxy header and Sec-Fetch-Site
 //   checks as locally, and no OPTIONS answer, so other origins can't send that header.
 // - Bodies stream through (nothing buffered) with a size cap; no cookies, no CORS headers back.
@@ -23,10 +22,16 @@ const ALLOWED_HOSTS = new Set([
   "plex.tv",                           // amp: linking Plex, finding servers
 ]);
 
-// amp: Will's own Plex server, by the ID in its plex.direct names (the "*.<id>.plex.direct" its
-// certificate covers). Other people's servers stay out.
-const ALLOWED_SUFFIXES = [".b8bcfdfc1fa94089836692c05a511aad.plex.direct"];
-const allowed = (host) => ALLOWED_HOSTS.has(host) || ALLOWED_SUFFIXES.some((s) => host.endsWith(s));
+// amp: anyone's Plex server, by its plex.direct name ("1-2-3-4.<server id>.plex.direct"). Such a
+// name resolves to whatever address is written in it, for any id, so the name alone would let the
+// relay reach any machine; it's the HTTPS certificate that makes it a Plex server, since only Plex
+// issues one for "*.<id>.plex.direct". So these are allowed over HTTPS only, where fetch checks the
+// certificate. The visitor's own Plex token passes through here (never logged).
+const PLEX_DIRECT = /^[0-9a-f.:-]+\.[0-9a-f]{32}\.plex\.direct$/;
+const allowed = (url) => {
+  const host = url.hostname.toLowerCase();
+  return ALLOWED_HOSTS.has(host) || (url.protocol === "https:" && PLEX_DIRECT.test(host));
+};
 
 const MAX_BYTES = 64 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -64,7 +69,7 @@ export async function onRequest({ request }) {
     return fail(400, "unreachable", "only http(s) URLs");
   }
   if (target.protocol !== "https:" && target.protocol !== "http:") return fail(400, "unreachable", "only http(s) URLs");
-  if (!allowed(target.hostname.toLowerCase())) {
+  if (!allowed(target)) {
     return fail(403, "blocked", `${target.hostname} isn't one of the demo's sites; run light-web locally to reach it`);
   }
 
@@ -104,7 +109,7 @@ async function media(request) {
   } catch {
     return new Response(null, { status: 400 });
   }
-  if (!/^https?:$/.test(target.protocol) || !allowed(target.hostname.toLowerCase())) return new Response(null, { status: 403 });
+  if (!/^https?:$/.test(target.protocol) || !allowed(target)) return new Response(null, { status: 403 });
   const headers = new Headers({ Accept: "*/*" });
   const range = request.headers.get("Range");
   if (range) headers.set("Range", range);
