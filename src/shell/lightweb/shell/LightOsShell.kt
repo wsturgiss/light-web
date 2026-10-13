@@ -1,5 +1,7 @@
 package lightweb.shell
 
+import kotlin.math.roundToInt
+
 import kotlinx.coroutines.delay
 
 import android.content.res.Configuration
@@ -76,6 +78,7 @@ private sealed interface ShellState {
 fun LightOsShell() {
     var state by remember { mutableStateOf<ShellState>(ShellState.Starting) }
     var greyscale by remember { mutableStateOf(true) }
+    var fill by remember { mutableStateOf(savedFill()) }
     var crash by remember { mutableStateOf(CrashGuard.lastCrash) }
     val scope = rememberCoroutineScope()
 
@@ -175,19 +178,23 @@ fun LightOsShell() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            // Whole device pixels per dp, so pixel fonts and 1px rules land on the pixel grid.
-            val scale = maxOf(1, minOf(constraints.maxWidth / SCREEN_W_DP, constraints.maxHeight / SCREEN_H_DP))
+            // Whole device pixels per dp, so pixel fonts and 1px rules land on the pixel grid; or, with
+            // fill on, as large as the window allows, keeping the screen's shape.
+            val fits = minOf(constraints.maxWidth / SCREEN_W_DP.toFloat(), constraints.maxHeight / SCREEN_H_DP.toFloat())
+            val scale = if (fill) fits.coerceAtLeast(0.5f) else maxOf(1, fits.toInt()).toFloat()
+            val pxW = (SCREEN_W_DP * scale).roundToInt()
+            val pxH = (SCREEN_H_DP * scale).roundToInt()
             val outer = LocalDensity.current
-            val w = with(outer) { (SCREEN_W_DP * scale).toDp() }
-            val h = with(outer) { (SCREEN_H_DP * scale).toDp() }
+            val w = with(outer) { pxW.toDp() }
+            val h = with(outer) { pxH.toDp() }
             Box(Modifier.size(w, h).background(Color.Black)) {
                 // The phone's screen as far as tools can ask: its density, its configuration and its
                 // window. Tools that size themselves from the window (light-amp scales its layout
                 // from containerSize) would otherwise get the whole browser window.
                 val outerWindow = LocalWindowInfo.current
-                val screenWindow = remember(outerWindow, scale) { ScreenWindowInfo(outerWindow, IntSize(SCREEN_W_DP * scale, SCREEN_H_DP * scale)) }
+                val screenWindow = remember(outerWindow, scale) { ScreenWindowInfo(outerWindow, IntSize(pxW, pxH)) }
                 CompositionLocalProvider(
-                    LocalDensity provides Density(scale.toFloat(), fontScale = 1f),
+                    LocalDensity provides Density(scale, fontScale = 1f),
                     LocalConfiguration provides Configuration(SCREEN_W_DP, SCREEN_H_DP),
                     LocalWindowInfo provides screenWindow,
                 ) {
@@ -201,6 +208,8 @@ fun LightOsShell() {
         Chrome(
             greyscale = greyscale,
             onGreyscale = { greyscale = !greyscale },
+            fill = fill,
+            onFill = { fill = !fill; saveFill(fill) },
             onBack = ::back,
             canGoBack = state is ShellState.Running,
         )
@@ -220,7 +229,7 @@ private fun Screen(state: ShellState, crash: CrashGuard.Crash?, onOpen: (LightTo
 
 /** Below the screen: what the phone's hardware and settings would do. */
 @Composable
-private fun Chrome(greyscale: Boolean, onGreyscale: () -> Unit, onBack: () -> Unit, canGoBack: Boolean) {
+private fun Chrome(greyscale: Boolean, onGreyscale: () -> Unit, fill: Boolean, onFill: () -> Unit, onBack: () -> Unit, canGoBack: Boolean) {
     val style = TextStyle(color = Color(0xFF8A8A8A), fontSize = 14.sp)
     Row(
         Modifier.fillMaxWidth().height(40.dp()).padding(horizontal = 16.dp()),
@@ -246,6 +255,12 @@ private fun Chrome(greyscale: Boolean, onGreyscale: () -> Unit, onBack: () -> Un
             style = style,
             modifier = Modifier.lightClickable(hapticsEnabled = false, onClick = onGreyscale),
         )
+        BasicText("   ·   ", style = style)
+        BasicText(
+            if (fill) "fill: on" else "fill: off",
+            style = style,
+            modifier = Modifier.lightClickable(hapticsEnabled = false, onClick = onFill),
+        )
     }
 }
 
@@ -261,6 +276,11 @@ private fun toolKeyCode(key: String): Int? = when (key) {
     "PageDown" -> KeyEvent.KEYCODE_VOLUME_DOWN
     else -> null
 }
+
+/** Whether the screen fills the window (see LightOsShell), as this browser last had it. */
+private fun savedFill(): Boolean = js("(() => { try { return localStorage.getItem('lightweb:fill') === '1'; } catch (e) { return false; } })()")
+
+private fun saveFill(on: Boolean): Unit = js("{ try { localStorage.setItem('lightweb:fill', on ? '1' : '0'); } catch (e) {} }")
 
 /** LightOS draws everything in greyscale unless a tool turns colour on; this is that filter. */
 private fun setGreyscale(on: Boolean): Unit = js(
